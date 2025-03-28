@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Simple RTS Demo with Debug Output</title>
+  <title>Simple RTS Demo with Cutting Progress</title>
   <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
   <style>
     body { margin: 0; }
@@ -37,7 +37,6 @@
 
       // Add a house image (building) to the scene
       this.house = this.add.image(100, 500, 'house');
-      // Optionally scale the house if needed:
       this.house.setScale(0.5);
 
       // Create the worker sprite
@@ -47,7 +46,7 @@
       this.worker.moving = false;
       this.worker.target = null;
 
-      // When the worker is clicked, mark it as selected (apply a tint) and output debug info
+      // When the worker is clicked, mark it as selected and output debug info
       this.worker.on('pointerdown', (pointer) => {
         if (!this.worker.moving) {
           this.worker.selected = true;
@@ -56,7 +55,7 @@
         }
       });
 
-      // Deselect the worker if clicking on empty space (if no interactive object is hit) and output debug info
+      // Deselect the worker if clicking on empty space and output debug info
       this.input.on('pointerdown', (pointer, gameObjects) => {
         if (gameObjects.length === 0 && !this.worker.moving) {
           this.worker.selected = false;
@@ -92,9 +91,8 @@
               y: tree.y,
               duration: distance * 5,
               onComplete: () => {
-                this.debugText.setText(`Debug Output:\nWorker reached tree at (${tree.x}, ${tree.y}). Cutting tree.`);
-                this.cutTree(tree);
-                this.worker.moving = false;
+                // When worker reaches the tree, start the cutting process.
+                this.startCutting(tree);
               }
             });
           }
@@ -102,13 +100,49 @@
       }
     }
 
+    startCutting(tree) {
+      // Output debug info
+      this.debugText.setText(`Debug Output:\nWorker reached tree at (${tree.x}, ${tree.y}). Cutting tree...`);
+
+      // Create a simple progress bar above the tree.
+      const barWidth = 40;
+      const barHeight = 8;
+      // Background bar (black)
+      const progressBarBackground = this.add.rectangle(tree.x, tree.y - 20, barWidth, barHeight, 0x000000);
+      progressBarBackground.setOrigin(0.5);
+      // Foreground bar (yellow), initially width 0
+      const progressBar = this.add.rectangle(tree.x - barWidth / 2, tree.y - 20, 0, barHeight, 0xffff00).setOrigin(0, 0.5);
+
+      // Create an object with a progress property that will go from 0 to 1
+      let progressObj = { progress: 0 };
+
+      // Tween to simulate the 5-second cutting process.
+      this.tweens.add({
+        targets: progressObj,
+        progress: 1,
+        duration: 5000,
+        onUpdate: () => {
+          progressBar.width = progressObj.progress * barWidth;
+        },
+        onComplete: () => {
+          // Once cutting is complete, destroy the progress bar and background,
+          // cut the tree, and update debug output.
+          progressBar.destroy();
+          progressBarBackground.destroy();
+          this.cutTree(tree);
+          this.worker.moving = false;
+          this.debugText.setText(`Debug Output:\nTree at (${tree.x}, ${tree.y}) cut. Wood: ${this.wood}`);
+        }
+      });
+    }
+
     cutTree(tree) {
-      // When a tree is cut, add its wood value to the resource and update the display
+      // When a tree is cut, add its wood value to the resource and update the display.
       this.wood += tree.woodValue;
       this.woodText.setText('Wood: ' + this.wood);
       tree.destroy();
 
-      // Check if the win condition (1000 wood) is met
+      // Check if the win condition (1000 wood) is met.
       if (this.wood >= 1000) {
         this.add.text(300, 300, 'You win!', { font: '32px Arial', fill: '#ffff00' });
       }
