@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Simple RTS Demo</title>
+  <title>Simple RTS Demo with Images</title>
   <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
   <style>
     body { margin: 0; }
@@ -17,50 +17,54 @@
     }
 
     preload() {
-      // In this simple demo we use Phaser's built-in graphics, so no external assets are required.
+      // Preload the images for worker, tree, and house.
+      this.load.image('worker', 'https://labs.phaser.io/assets/sprites/phaser-dude.png');
+      this.load.image('tree', 'https://raw.githubusercontent.com/photonstorm/phaser3-examples/master/public/assets/sprites/tree.png');
+      this.load.image('house', 'https://raw.githubusercontent.com/photonstorm/phaser3-examples/master/public/assets/sprites/house.png');
     }
 
     create() {
-      // Initialize resource count and display text
+      // Initialize wood resource and display text
       this.wood = 0;
       this.woodText = this.add.text(10, 10, 'Wood: 0', { font: '16px Arial', fill: '#ffffff' });
 
-      // Create a simple house building (blue square) with a text label
-      this.house = this.add.rectangle(100, 500, 50, 50, 0x8888ff);
-      this.add.text(85, 480, 'House', { font: '12px Arial', fill: '#000000' });
+      // Add a house image (building) to the scene
+      this.house = this.add.image(100, 500, 'house');
+      // Optionally scale the house if needed:
+      this.house.setScale(0.5);
 
-      // Create the worker (red square). It will be selected on click.
-      this.worker = this.add.rectangle(400, 300, 20, 20, 0xff0000);
+      // Create the worker sprite
+      this.worker = this.add.image(400, 300, 'worker');
       this.worker.setInteractive();
       this.worker.selected = false;
       this.worker.moving = false;
       this.worker.target = null;
 
-      // When the worker is clicked, mark it as selected (and change color to yellow)
+      // When the worker is clicked, mark it as selected (apply a tint)
       this.worker.on('pointerdown', (pointer) => {
         if (!this.worker.moving) {
           this.worker.selected = true;
-          this.worker.fillColor = 0xffff00;
+          this.worker.setTint(0xffff00);
         }
       });
 
-      // Deselect the worker when clicking on empty space (if no interactive object is hit)
+      // Deselect the worker if clicking on empty space and worker is not moving
       this.input.on('pointerdown', (pointer, gameObjects) => {
         if (gameObjects.length === 0 && !this.worker.moving) {
           this.worker.selected = false;
-          this.worker.fillColor = 0xff0000;
+          this.worker.clearTint();
         }
       });
 
-      // Create a group of trees (green squares) at random positions
+      // Create a group of trees with image assets at random positions
       this.trees = this.add.group();
       const treeCount = 20;
       for (let i = 0; i < treeCount; i++) {
         let x = Phaser.Math.Between(50, 750);
         let y = Phaser.Math.Between(50, 550);
-        let tree = this.add.rectangle(x, y, 30, 30, 0x00ff00);
+        let tree = this.add.image(x, y, 'tree');
         tree.setInteractive();
-        tree.woodValue = 10;  // Each tree gives 10 wood
+        tree.woodValue = 10; // Each tree gives 10 wood
         this.trees.add(tree);
 
         // When a tree is clicked, if a worker is selected and not busy, order it to cut the tree
@@ -69,8 +73,8 @@
             this.worker.target = tree;
             this.worker.moving = true;
             this.worker.selected = false;
-            this.worker.fillColor = 0xff0000;
-            // Calculate movement duration based on distance (adjust multiplier as needed)
+            this.worker.clearTint();
+            // Calculate the distance to the tree for tween duration
             const distance = Phaser.Math.Distance.Between(this.worker.x, this.worker.y, tree.x, tree.y);
             this.tweens.add({
               targets: this.worker,
