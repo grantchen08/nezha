@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Simple RTS Demo with Images</title>
+  <title>Simple RTS Demo with Debug Output</title>
   <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
   <style>
     body { margin: 0; }
@@ -28,6 +28,13 @@
       this.wood = 0;
       this.woodText = this.add.text(10, 10, 'Wood: 0', { font: '16px Arial', fill: '#ffffff' });
 
+      // Create a debug text region on the left
+      this.debugText = this.add.text(10, 40, 'Debug Output:', { 
+        font: '14px Arial', 
+        fill: '#ffffff', 
+        wordWrap: { width: 200 } 
+      });
+
       // Add a house image (building) to the scene
       this.house = this.add.image(100, 500, 'house');
       // Optionally scale the house if needed:
@@ -40,19 +47,21 @@
       this.worker.moving = false;
       this.worker.target = null;
 
-      // When the worker is clicked, mark it as selected (apply a tint)
+      // When the worker is clicked, mark it as selected (apply a tint) and output debug info
       this.worker.on('pointerdown', (pointer) => {
         if (!this.worker.moving) {
           this.worker.selected = true;
           this.worker.setTint(0xffff00);
+          this.debugText.setText("Debug Output:\nWorker clicked and selected.");
         }
       });
 
-      // Deselect the worker if clicking on empty space and worker is not moving
+      // Deselect the worker if clicking on empty space (if no interactive object is hit) and output debug info
       this.input.on('pointerdown', (pointer, gameObjects) => {
         if (gameObjects.length === 0 && !this.worker.moving) {
           this.worker.selected = false;
           this.worker.clearTint();
+          this.debugText.setText("Debug Output:\nBackground clicked. Worker deselected.");
         }
       });
 
@@ -74,6 +83,7 @@
             this.worker.moving = true;
             this.worker.selected = false;
             this.worker.clearTint();
+            this.debugText.setText(`Debug Output:\nTree clicked. Moving worker to (${tree.x}, ${tree.y}).`);
             // Calculate the distance to the tree for tween duration
             const distance = Phaser.Math.Distance.Between(this.worker.x, this.worker.y, tree.x, tree.y);
             this.tweens.add({
@@ -82,6 +92,7 @@
               y: tree.y,
               duration: distance * 5,
               onComplete: () => {
+                this.debugText.setText(`Debug Output:\nWorker reached tree at (${tree.x}, ${tree.y}). Cutting tree.`);
                 this.cutTree(tree);
                 this.worker.moving = false;
               }
