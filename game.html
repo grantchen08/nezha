@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Simple RTS Demo</title>
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
+  <style>
+    body { margin: 0; }
+    canvas { display: block; margin: 0 auto; }
+  </style>
+</head>
+<body>
+<script>
+  class DemoScene extends Phaser.Scene {
+    constructor() {
+      super({ key: 'DemoScene' });
+    }
+
+    preload() {
+      // In this simple demo we use Phaser's built-in graphics, so no external assets are required.
+    }
+
+    create() {
+      // Initialize resource count and display text
+      this.wood = 0;
+      this.woodText = this.add.text(10, 10, 'Wood: 0', { font: '16px Arial', fill: '#ffffff' });
+
+      // Create a simple house building (blue square) with a text label
+      this.house = this.add.rectangle(100, 500, 50, 50, 0x8888ff);
+      this.add.text(85, 480, 'House', { font: '12px Arial', fill: '#000000' });
+
+      // Create the worker (red square). It will be selected on click.
+      this.worker = this.add.rectangle(400, 300, 20, 20, 0xff0000);
+      this.worker.setInteractive();
+      this.worker.selected = false;
+      this.worker.moving = false;
+      this.worker.target = null;
+
+      // When the worker is clicked, mark it as selected (and change color to yellow)
+      this.worker.on('pointerdown', (pointer) => {
+        if (!this.worker.moving) {
+          this.worker.selected = true;
+          this.worker.fillColor = 0xffff00;
+        }
+      });
+
+      // Deselect the worker when clicking on empty space (if no interactive object is hit)
+      this.input.on('pointerdown', (pointer, gameObjects) => {
+        if (gameObjects.length === 0 && !this.worker.moving) {
+          this.worker.selected = false;
+          this.worker.fillColor = 0xff0000;
+        }
+      });
+
+      // Create a group of trees (green squares) at random positions
+      this.trees = this.add.group();
+      const treeCount = 20;
+      for (let i = 0; i < treeCount; i++) {
+        let x = Phaser.Math.Between(50, 750);
+        let y = Phaser.Math.Between(50, 550);
+        let tree = this.add.rectangle(x, y, 30, 30, 0x00ff00);
+        tree.setInteractive();
+        tree.woodValue = 10;  // Each tree gives 10 wood
+        this.trees.add(tree);
+
+        // When a tree is clicked, if a worker is selected and not busy, order it to cut the tree
+        tree.on('pointerdown', () => {
+          if (this.worker.selected && !this.worker.moving) {
+            this.worker.target = tree;
+            this.worker.moving = true;
+            this.worker.selected = false;
+            this.worker.fillColor = 0xff0000;
+            // Calculate movement duration based on distance (adjust multiplier as needed)
+            const distance = Phaser.Math.Distance.Between(this.worker.x, this.worker.y, tree.x, tree.y);
+            this.tweens.add({
+              targets: this.worker,
+              x: tree.x,
+              y: tree.y,
+              duration: distance * 5,
+              onComplete: () => {
+                this.cutTree(tree);
+                this.worker.moving = false;
+              }
+            });
+          }
+        });
+      }
+    }
+
+    cutTree(tree) {
+      // When a tree is cut, add its wood value to the resource and update the display
+      this.wood += tree.woodValue;
+      this.woodText.setText('Wood: ' + this.wood);
+      tree.destroy();
+
+      // Check if the win condition (1000 wood) is met
+      if (this.wood >= 1000) {
+        this.add.text(300, 300, 'You win!', { font: '32px Arial', fill: '#ffff00' });
+      }
+    }
+  }
+
+  const config = {
+    type: Phaser.AUTO,
+    width: 800,
+    height: 600,
+    scene: [DemoScene]
+  };
+
+  const game = new Phaser.Game(config);
+</script>
+</body>
+</html>
