@@ -5,87 +5,69 @@
   <title>Simple RTS Demo with Worker Animation</title>
   <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script>
   <style>
-    /* Basic styling to remove default body margin */
-    body { margin: 0; background-color: #333; /* Dark background for contrast */ }
-    /* Center the game canvas */
-    canvas { display: block; margin: 20px auto; border-radius: 8px; /* Added rounded corners */ }
+    body { margin: 0; background-color: #333; }
+    canvas { display: block; margin: 20px auto; border-radius: 8px; }
   </style>
 </head>
 <body>
 <script>
-  // Define the main game scene
   class DemoScene extends Phaser.Scene {
     constructor() {
       super({ key: 'DemoScene' });
-      // Initialize game variables
-      this.wood = 0; // Player's wood resource count
-      this.worker = null; // Reference to the worker sprite
-      this.trees = null; // Group for tree sprites
-      this.house = null; // Reference to the house sprite
-      this.woodText = null; // Text object to display wood count
-      this.debugText = null; // Text object for debug messages
+      this.wood = 0;
+      this.worker = null;
+      this.trees = null;
+      this.house = null;
+      this.woodText = null;
+      this.debugText = null;
     }
 
-    // Preload game assets (images and spritesheet)
     preload() {
-      // Load the spritesheet for the worker animation
-      // URL: https://grantchen08.github.io/nezha/worker_walk.png
-      // Frame dimensions: 32x64 pixels
       this.load.spritesheet('worker_sheet', 'https://grantchen08.github.io/nezha/worker_walk.png', {
           frameWidth: 32,
           frameHeight: 64
       });
-
-      // Load static images for tree and house
       this.load.image('tree', 'https://raw.githubusercontent.com/photonstorm/phaser3-examples/master/public/assets/sprites/tree.png');
       this.load.image('house', 'https://raw.githubusercontent.com/photonstorm/phaser3-examples/master/public/assets/sprites/house.png');
-
-      // Add error handling for asset loading
       this.load.on('loaderror', (file) => {
           console.error(`Error loading asset: ${file.key} from ${file.url}`);
-          // Ensure debugText exists before trying to set text
           if (this.debugText) {
             this.debugText.setText(`Debug Output:\nError loading ${file.key}`);
           }
       });
     }
 
-    // Create game objects and set up initial state
     create() {
-      // Initialize wood resource and display text in the top-left corner
+      this.cameras.main.setBackgroundColor('#228B22'); // Set background to dark green
+
       this.wood = 0;
       this.woodText = this.add.text(10, 10, 'Wood: 0', { font: '16px Arial', fill: '#ffffff' });
 
-      // Create a debug text area below the wood count
       this.debugText = this.add.text(10, 40, 'Debug Output:', {
         font: '14px Arial',
         fill: '#ffffff',
-        wordWrap: { width: 200 } // Wrap text within 200 pixels
+        wordWrap: { width: 200 }
       });
-      this.debugText.setText("Debug Output:\nGame started. Click worker to select."); // Initial debug message
+      this.debugText.setText("Debug Output:\nGame started. Click worker to select.");
 
-      // Add a house image (building) to the scene at a fixed position
       this.house = this.add.image(100, 500, 'house');
-      this.house.setScale(0.5); // Scale down the house image
+      this.house.setScale(0.5);
 
-      // Create the worker sprite using the loaded spritesheet
       this.worker = this.add.sprite(this.sys.game.config.width / 2, this.sys.game.config.height / 2, 'worker_sheet');
-      this.worker.setFrame(0); // Start on the first frame (idle pose)
-      this.worker.setInteractive(); // Make the worker clickable
-      this.worker.selected = false; // Custom property to track selection state
-      this.worker.moving = false; // Custom property to track if the worker is busy/moving
-      this.worker.target = null; // Custom property to store the worker's target (e.g., a tree)
-      // this.worker.setScale(2); // Optional scaling
+      this.worker.setFrame(0);
+      this.worker.setInteractive();
+      this.worker.selected = false;
+      this.worker.moving = false;
+      this.worker.target = null;
+      // this.worker.setScale(2);
 
-      // --- Create Worker Animations ---
       this.anims.create({
-          key: 'walk', // Animation key name
-          frames: this.anims.generateFrameNumbers('worker_sheet', { start: 0, end: 3 }), // Use frames 0-3
-          frameRate: 8, // Frames per second
-          repeat: -1 // Loop indefinitely
+          key: 'walk',
+          frames: this.anims.generateFrameNumbers('worker_sheet', { start: 0, end: 3 }),
+          frameRate: 8,
+          repeat: -1
       });
 
-      // Event listener for clicking the worker
       this.worker.on('pointerdown', (pointer) => {
         if (!this.worker.moving) {
           this.worker.selected = true;
@@ -94,7 +76,6 @@
         }
       });
 
-      // Event listener for clicking anywhere on the game canvas
       this.input.on('pointerdown', (pointer, gameObjects) => {
         if (gameObjects.length === 0 && this.worker.selected && !this.worker.moving) {
           this.worker.selected = false;
@@ -103,7 +84,6 @@
         }
       });
 
-      // Create a group to hold the tree sprites
       this.trees = this.add.group();
       const treeCount = 20;
       for (let i = 0; i < treeCount; i++) {
@@ -117,7 +97,6 @@
         tree.woodValue = 10;
         this.trees.add(tree);
 
-        // Event listener for clicking a tree
         tree.on('pointerdown', () => {
           if (this.worker.selected && !this.worker.moving) {
             this.worker.target = tree;
@@ -132,17 +111,12 @@
 
             this.worker.anims.play('walk', true);
 
-            // --- Corrected Sprite Flipping Logic ---
-            // Assuming the base sprite faces LEFT by default based on observation
             if (tree.x < this.worker.x) {
-                // Moving LEFT: Keep original direction (no flip)
                 this.worker.setFlipX(false);
             } else {
-                // Moving RIGHT: Flip the sprite horizontally
                 this.worker.setFlipX(true);
             }
 
-            // Animate the worker moving to the tree
             this.tweens.add({
               targets: this.worker,
               x: tree.x,
@@ -152,7 +126,6 @@
               onComplete: () => {
                 this.worker.anims.stop();
                 this.worker.setFrame(0);
-                // Reset flip when movement stops (optional, but good practice)
                 this.worker.setFlipX(false);
                 this.startCutting(tree);
               }
@@ -162,7 +135,6 @@
       }
     }
 
-    // Function to initiate the tree cutting process
     startCutting(tree) {
       if (!tree || !tree.active) {
           this.worker.moving = false;
@@ -228,13 +200,11 @@
           this.worker.target = null;
           this.worker.anims.stop();
           this.worker.setFrame(0);
-          // Ensure flip is reset after cutting action too
           this.worker.setFlipX(false);
         }
       });
     }
 
-    // Function to handle the completion of cutting a tree
     cutTree(tree) {
       if (!tree || !tree.active) {
         console.warn("Attempted to cut an invalid or inactive tree.");
@@ -254,14 +224,13 @@
       }
     }
 
-    // Update loop
     update(time, delta) {
         if (this.worker.moving && this.worker.target && !this.worker.target.active) {
             console.log("Target destroyed during movement, stopping worker.");
             this.tweens.killTweensOf(this.worker);
             this.worker.anims.stop();
             this.worker.setFrame(0);
-            this.worker.setFlipX(false); // Reset flip
+            this.worker.setFlipX(false);
             this.worker.moving = false;
             this.worker.target = null;
             this.debugText.setText(`Debug Output:\nTarget tree disappeared. Worker stopped.`);
@@ -269,7 +238,6 @@
     }
   }
 
-  // Phaser game configuration object
   const config = {
     type: Phaser.AUTO,
     width: 800,
@@ -281,7 +249,6 @@
     scene: [DemoScene]
   };
 
-  // Create a new Phaser game instance
   const game = new Phaser.Game(config);
 </script>
 </body>
