@@ -27,6 +27,7 @@
           frameWidth: 32,
           frameHeight: 64
       });
+      this.load.audio('worker_walk', 'https://grantchen08.github.io/nezha/worker_walk.mp3');
       this.load.image('tree', 'https://raw.githubusercontent.com/photonstorm/phaser3-examples/master/public/assets/sprites/tree.png');
       this.load.image('house', 'https://raw.githubusercontent.com/photonstorm/phaser3-examples/master/public/assets/sprites/house.png');
       this.load.on('loaderror', (file) => {
@@ -38,36 +39,30 @@
     }
 
     create() {
-      this.cameras.main.setBackgroundColor('#228B22'); // Set background to dark green
-
+      this.cameras.main.setBackgroundColor('#228B22');
       this.wood = 0;
       this.woodText = this.add.text(10, 10, 'Wood: 0', { font: '16px Arial', fill: '#ffffff' });
-
       this.debugText = this.add.text(10, 40, 'Debug Output:', {
         font: '14px Arial',
         fill: '#ffffff',
         wordWrap: { width: 200 }
       });
       this.debugText.setText("Debug Output:\nGame started. Click worker to select.");
-
       this.house = this.add.image(100, 500, 'house');
       this.house.setScale(0.5);
-
       this.worker = this.add.sprite(this.sys.game.config.width / 2, this.sys.game.config.height / 2, 'worker_sheet');
       this.worker.setFrame(0);
       this.worker.setInteractive();
       this.worker.selected = false;
       this.worker.moving = false;
       this.worker.target = null;
-      // this.worker.setScale(2);
-
+      this.workerWalkSound = this.sound.add('worker_walk');
       this.anims.create({
           key: 'walk',
           frames: this.anims.generateFrameNumbers('worker_sheet', { start: 0, end: 3 }),
           frameRate: 8,
           repeat: -1
       });
-
       this.worker.on('pointerdown', (pointer) => {
         if (!this.worker.moving) {
           this.worker.selected = true;
@@ -75,7 +70,6 @@
           this.debugText.setText("Debug Output:\nWorker clicked and selected.\nClick a tree to send worker.");
         }
       });
-
       this.input.on('pointerdown', (pointer, gameObjects) => {
         if (gameObjects.length === 0 && this.worker.selected && !this.worker.moving) {
           this.worker.selected = false;
@@ -83,7 +77,6 @@
           this.debugText.setText("Debug Output:\nBackground clicked. Worker deselected.");
         }
       });
-
       this.trees = this.add.group();
       const treeCount = 20;
       for (let i = 0; i < treeCount; i++) {
@@ -96,7 +89,6 @@
         tree.setInteractive();
         tree.woodValue = 10;
         this.trees.add(tree);
-
         tree.on('pointerdown', () => {
           if (this.worker.selected && !this.worker.moving) {
             this.worker.target = tree;
@@ -104,19 +96,16 @@
             this.worker.selected = false;
             this.worker.clearTint();
             this.debugText.setText(`Debug Output:\nTree clicked. Moving worker to (${Math.round(tree.x)}, ${Math.round(tree.y)}).`);
-
             const distance = Phaser.Math.Distance.Between(this.worker.x, this.worker.y, tree.x, tree.y);
             const speed = 100;
             const duration = (distance / speed) * 1000;
-
             this.worker.anims.play('walk', true);
-
+            this.workerWalkSound.play({ loop: true });
             if (tree.x < this.worker.x) {
                 this.worker.setFlipX(false);
             } else {
                 this.worker.setFlipX(true);
             }
-
             this.tweens.add({
               targets: this.worker,
               x: tree.x,
@@ -124,6 +113,7 @@
               duration: duration,
               ease: 'Linear',
               onComplete: () => {
+                this.workerWalkSound.stop();
                 this.worker.anims.stop();
                 this.worker.setFrame(0);
                 this.worker.setFlipX(false);
@@ -144,21 +134,16 @@
           this.worker.setFrame(0);
           return;
       }
-
       this.debugText.setText(`Debug Output:\nWorker reached tree at (${Math.round(tree.x)}, ${Math.round(tree.y)}). Cutting tree...`);
-
       const barWidth = 40;
       const barHeight = 8;
       const barYOffset = tree.height ? tree.height / 2 + 5 : 30;
-
       const progressBarBackground = this.add.rectangle(
           tree.x, tree.y + barYOffset, barWidth, barHeight, 0x333333
       ).setOrigin(0.5);
-
       const progressBar = this.add.rectangle(
           tree.x - barWidth / 2, tree.y + barYOffset, 0, barHeight, 0x00ff00
       ).setOrigin(0, 0.5);
-
       if (tree.active) {
           tree.progressBar = progressBar;
           tree.progressBarBackground = progressBarBackground;
@@ -172,9 +157,7 @@
           this.debugText.setText(`Debug Output:\nTree disappeared before cutting started.`);
           return;
       }
-
       let progressObj = { progress: 0 };
-
       this.tweens.add({
         targets: progressObj,
         progress: 1,
@@ -188,14 +171,12 @@
         onComplete: () => {
           if (progressBar && progressBar.active) progressBar.destroy();
           if (progressBarBackground && progressBarBackground.active) progressBarBackground.destroy();
-
           if (tree && tree.active) {
               this.cutTree(tree);
               this.debugText.setText(`Debug Output:\nTree at (${Math.round(tree.x)}, ${Math.round(tree.y)}) cut. Wood: ${this.wood}`);
           } else {
               this.debugText.setText(`Debug Output:\nTree cutting finished, but tree was already gone.`);
           }
-
           this.worker.moving = false;
           this.worker.target = null;
           this.worker.anims.stop();
@@ -213,7 +194,6 @@
       this.wood += tree.woodValue;
       this.woodText.setText('Wood: ' + this.wood);
       this.trees.remove(tree, true, true);
-
       const winAmount = 100;
       if (this.wood >= winAmount) {
         this.add.text(this.sys.game.config.width / 2, this.sys.game.config.height / 2,
@@ -228,6 +208,7 @@
         if (this.worker.moving && this.worker.target && !this.worker.target.active) {
             console.log("Target destroyed during movement, stopping worker.");
             this.tweens.killTweensOf(this.worker);
+            this.workerWalkSound.stop();
             this.worker.anims.stop();
             this.worker.setFrame(0);
             this.worker.setFlipX(false);
