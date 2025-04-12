@@ -89,7 +89,7 @@
         wordWrap: { width: 200 }
       });
       this.debugText.setDepth(1000);
-      this.debugText.setText("Debug Output:\nGame started. Click worker to select.");
+      this.debugText.setText("Debug Output:\nGame started. Worker finding trees.");
 
       // --- House Setup ---
       this.house = this.add.image(100, 500, 'house');
@@ -101,8 +101,9 @@
       // --- Worker Setup ---
       this.worker = this.add.sprite(this.sys.game.config.width / 2, this.sys.game.config.height / 2, 'worker_sheet').setOrigin(0.5, 1);
       this.worker.setFrame(0);
-      this.worker.setInteractive();
-      this.worker.selected = false;
+      //this.worker.setInteractive(); // No longer interactive for selection
+      //this.worker.selected = false; // No longer selected
+      this.worker.state = 'chopping'; // <-- Initial state
       this.worker.moving = false;
       this.worker.target = null;
       this.worker.isCutting = false;
@@ -131,21 +132,11 @@
       });
 
       // --- Event Handlers ---
-      this.worker.on('pointerdown', (pointer) => {
-        if (!this.worker.moving && !this.worker.isCutting) {
-          this.worker.selected = true;
-          this.worker.setTint(0xffff00);
-          this.debugText.setText("Debug Output:\nWorker clicked and selected.\nClick a tree to send worker.");
-        }
-      });
+      // Remove worker click handler
+      // this.worker.on('pointerdown', (pointer) => { ... });
 
-      this.input.on('pointerdown', (pointer, gameObjects) => {
-        if (gameObjects.length === 0 && this.worker.selected && !this.worker.moving && !this.worker.isCutting) {
-          this.worker.selected = false;
-          this.worker.clearTint();
-          this.debugText.setText("Debug Output:\nBackground clicked. Worker deselected.");
-        }
-      });
+      // Remove background click handler
+      // this.input.on('pointerdown', (pointer, gameObjects) => { ... });
 
       // --- Tree Setup ---
       this.trees = this.add.group();
@@ -167,95 +158,13 @@
 
         let tree = this.add.sprite(x, y, 'tree_sheet').setOrigin(0.5, 1);
         tree.setFrame(0);
-        tree.setInteractive();
+        //tree.setInteractive(); // Trees no longer need to be interactive
         tree.health = 10;
         tree.maxHealth = 10; // Add max health for consistency
         this.trees.add(tree);
 
-        tree.on('pointerdown', () => {
-          if (this.worker.selected && !this.worker.moving) {
-            if (this.worker.isCutting) {
-                this.stopCutting(); // This will also destroy the old tree health bar
-            }
-
-            this.worker.target = tree;
-            this.worker.moving = true;
-            this.worker.selected = false;
-            this.worker.clearTint();
-
-            const offset = 50;
-            const targetY = tree.y;
-            let targetX;
-            let faceRightOnArrival;
-
-            if (this.worker.x <= tree.x) {
-                targetX = tree.x - offset;
-                faceRightOnArrival = true;
-            } else {
-                targetX = tree.x + offset;
-                faceRightOnArrival = false;
-            }
-
-            this.debugText.setText(`Debug Output:\nTree clicked. Moving worker to (${Math.round(targetX)}, ${Math.round(targetY)}).`);
-
-            const distance = Phaser.Math.Distance.Between(this.worker.x, this.worker.y, targetX, targetY);
-            const speed = 100;
-            const duration = (distance / speed) * 1000;
-
-            this.worker.anims.play('walk', true);
-            if (!this.workerWalkSound.isPlaying) {
-                 this.workerWalkSound.play({ loop: true });
-            }
-
-            if (targetX < this.worker.x) {
-                 this.worker.setFlipX(false);
-            } else {
-                 this.worker.setFlipX(true);
-            }
-
-            this.tweens.add({
-              targets: this.worker,
-              x: targetX,
-              y: targetY,
-              duration: duration,
-              ease: 'Linear',
-              onComplete: () => {
-                this.workerWalkSound.stop();
-                this.worker.moving = false;
-
-                const actualTree = this.worker.target;
-                if (actualTree && actualTree.active) {
-                    this.worker.isCutting = true;
-                    this.worker.cuttingTarget = actualTree;
-                    this.debugText.setText(`Debug Output:\nReached tree. Starting to cut (Health: ${actualTree.health}).`);
-
-                    this.createTreeHealthBar(actualTree); // <-- Create health bar for the specific tree
-
-                    this.worker.setFlipX(!faceRightOnArrival);
-                    this.worker.setTexture('worker_chop_sheet');
-                    this.worker.anims.play('chop', true);
-
-                    if (this.chopSound && !this.chopSound.isPlaying) {
-                        this.chopSound.play({ loop: true });
-                    }
-                    this.cuttingTimer = this.time.addEvent({
-                        delay: 1000,
-                        callback: this.damageTree,
-                        callbackScope: this,
-                        loop: true
-                    });
-                } else {
-                     this.debugText.setText(`Debug Output:\nReached tree location, but tree is gone.`);
-                     this.worker.target = null;
-                     this.worker.setTexture('worker_sheet');
-                     this.worker.anims.stop();
-                     this.worker.setFrame(0);
-                     this.worker.setFlipX(false);
-                }
-              }
-            });
-          }
-        });
+        // Remove tree click handler
+        // tree.on('pointerdown', () => { ... });
       }
        // House origin set earlier
     }
@@ -347,10 +256,10 @@
 
         this.updateTreeHealthBar(tree); // <-- Update tree health bar visual
 
-        this.debugText.setText(`Debug Output:\nCutting tree (Health: ${tree.health})`);
+        //this.debugText.setText(`Debug Output:\nCutting tree (Health: ${tree.health})`); // Less verbose debug
 
         if (tree.health <= 0) {
-            this.debugText.setText(`Debug Output:\nTree cut down!`);
+            this.debugText.setText(`Debug Output:\nTree cut down! Wood: ${this.wood + 10}`); // Show wood gain
             this.cutTree(tree); // This calls stopCutting, which destroys the bar
         } else if (tree.health <= 3.3) {
             tree.setFrame(2);
@@ -382,6 +291,7 @@
 
             this.worker.isCutting = false;
             this.worker.cuttingTarget = null;
+            // Worker remains in 'chopping' state unless no trees left
         }
 
         // Destroy the health bar of the tree that WAS being cut
@@ -393,12 +303,11 @@
      * Finalizes cutting the tree, adds wood, removes the tree, and checks for win condition.
      */
     cutTree(tree) {
-      // stopCutting is called first, destroying the health bar
+      // stopCutting is called first, destroying the health bar and resetting worker animation
       this.stopCutting();
 
       if (!tree || !tree.active) {
         console.warn("Attempted to cut an invalid or inactive tree.");
-        // Ensure bar is gone if somehow stopCutting didn't catch it
         this.destroyTreeHealthBar(tree);
         return;
       }
@@ -418,7 +327,9 @@
         this.tweens.killAll();
         this.sound.stopAll();
         if(this.cuttingTimer) this.cuttingTimer.remove();
+        this.worker.state = 'idle'; // Stop worker on win
       }
+      // After cutting, the worker will automatically look for the next tree in the update loop
     }
 
     /**
@@ -444,11 +355,150 @@
         unit.healthBarFill.setDepth(unit.depth + 2);
     }
 
+    /**
+     * Finds the closest active tree to the worker.
+     * @returns {Phaser.GameObjects.Sprite | null} The closest tree or null if none found.
+     */
+    findClosestTree() {
+        const activeTrees = this.trees.getChildren().filter(tree => tree.active);
+        if (activeTrees.length === 0) {
+            return null;
+        }
+
+        let closestTree = null;
+        let minDistance = Infinity;
+
+        activeTrees.forEach(tree => {
+            const distance = Phaser.Math.Distance.Between(this.worker.x, this.worker.y, tree.x, tree.y);
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestTree = tree;
+            }
+        });
+        return closestTree;
+    }
+
+    /**
+     * Sends the worker to move towards and cut a specific tree.
+     * @param {Phaser.GameObjects.Sprite} tree - The target tree.
+     */
+    sendWorkerToTree(tree) {
+        if (!tree || !tree.active || !this.worker || this.worker.moving || this.worker.isCutting) {
+            return; // Don't send if invalid target or worker busy
+        }
+
+        this.worker.target = tree;
+        this.worker.moving = true;
+
+        const offset = 50;
+        const targetY = tree.y;
+        let targetX;
+        let faceRightOnArrival;
+
+        if (this.worker.x <= tree.x) {
+            targetX = tree.x - offset;
+            faceRightOnArrival = true;
+        } else {
+            targetX = tree.x + offset;
+            faceRightOnArrival = false;
+        }
+
+        this.debugText.setText(`Debug Output:\nWorker moving to tree at (${Math.round(tree.x)}, ${Math.round(tree.y)}).`);
+
+        const distance = Phaser.Math.Distance.Between(this.worker.x, this.worker.y, targetX, targetY);
+        const speed = 100;
+        const duration = (distance / speed) * 1000;
+
+        this.worker.anims.play('walk', true);
+        if (!this.workerWalkSound.isPlaying) {
+             this.workerWalkSound.play({ loop: true });
+        }
+
+        if (targetX < this.worker.x) {
+             this.worker.setFlipX(false);
+        } else {
+             this.worker.setFlipX(true);
+        }
+
+        this.tweens.add({
+          targets: this.worker,
+          x: targetX,
+          y: targetY,
+          duration: duration,
+          ease: 'Linear',
+          onComplete: () => {
+            this.workerWalkSound.stop();
+            this.worker.moving = false; // Worker stopped moving
+
+            const actualTree = this.worker.target; // Target might have changed? Re-verify
+            if (actualTree && actualTree.active && actualTree === tree) { // Ensure it's the same tree
+                this.worker.isCutting = true;
+                this.worker.cuttingTarget = actualTree;
+                this.debugText.setText(`Debug Output:\nReached tree. Starting to cut (Health: ${actualTree.health}).`);
+
+                this.createTreeHealthBar(actualTree);
+
+                this.worker.setFlipX(!faceRightOnArrival);
+                this.worker.setTexture('worker_chop_sheet');
+                this.worker.anims.play('chop', true);
+
+                if (this.chopSound && !this.chopSound.isPlaying) {
+                    this.chopSound.play({ loop: true });
+                }
+                this.cuttingTimer = this.time.addEvent({
+                    delay: 1000,
+                    callback: this.damageTree,
+                    callbackScope: this,
+                    loop: true
+                });
+            } else {
+                 // Target changed or became inactive during travel
+                 this.debugText.setText(`Debug Output:\nReached location, but target invalid.`);
+                 this.worker.target = null;
+                 this.worker.setTexture('worker_sheet');
+                 this.worker.anims.stop();
+                 this.worker.setFrame(0);
+                 this.worker.setFlipX(false);
+                 // State logic in update will find a new target if available
+            }
+          }
+        });
+    }
+
+    /**
+     * Handles the worker's state machine logic.
+     */
+    handleWorkerState() {
+        if (!this.worker || !this.worker.active) return; // Do nothing if worker doesn't exist
+
+        if (this.worker.state === 'chopping' && !this.worker.moving && !this.worker.isCutting) {
+            const closestTree = this.findClosestTree();
+            if (closestTree) {
+                this.sendWorkerToTree(closestTree);
+            } else {
+                // No trees left
+                this.worker.state = 'idle';
+                this.debugText.setText("Debug Output:\nNo trees left. Worker idle.");
+                // Ensure worker is visually idle
+                this.worker.setTexture('worker_sheet');
+                this.worker.anims.stop();
+                this.worker.setFrame(0);
+                this.worker.setFlipX(false);
+            }
+        } else if (this.worker.state === 'idle') {
+            // Worker is idle, do nothing automatically
+            // Could add logic here later if needed
+        }
+    }
+
 
     /**
      * Game loop update function. Runs continuously.
      */
     update(time, delta) {
+        // --- Handle Worker State ---
+        this.handleWorkerState(); // <-- Manage worker actions based on state
+
         // --- Depth Sorting ---
         const depthSortedSprites = [];
         if (this.worker && this.worker.active) {
@@ -488,10 +538,10 @@
         this.updateHealthBar(this.house);
 
 
-        // --- Target / Cutting Checks ---
+        // --- Target / Cutting Checks (Still useful for edge cases like target destroyed mid-action) ---
         if (this.worker.moving && this.worker.target && !this.worker.target.active) {
             console.log("Target destroyed during movement, stopping worker.");
-            this.tweens.killTweensOf(this.worker);
+            this.tweens.killTweensOf(this.worker); // Stop movement tween specifically
             this.workerWalkSound.stop();
             this.worker.setTexture('worker_sheet');
             this.worker.anims.stop();
@@ -500,12 +550,14 @@
             this.worker.moving = false;
             this.worker.target = null;
             this.debugText.setText(`Debug Output:\nTarget tree disappeared. Worker stopped.`);
+            // State logic will find a new target in the next update if needed
         }
 
         if (this.worker.isCutting && this.worker.cuttingTarget && !this.worker.cuttingTarget.active) {
              console.log("Target destroyed during cutting, stopping worker.");
              this.stopCutting(); // This resets texture/anim and destroys bar
              this.debugText.setText(`Debug Output:\nCutting target disappeared. Worker stopped.`);
+             // State logic will find a new target in the next update if needed
         }
     }
   }
