@@ -41,12 +41,14 @@
       // Game state variables
       this.wood = 0; // Player's wood count
       this.worker = null; // The player-controlled worker sprite
+      this.house = null; // The player house sprite
+      this.aiHouse = null; // AI house sprite
+      this.aiWorker = null; // AI worker sprite
       this.trees = null; // Group containing tree sprites
-      this.house = null; // The house sprite (visual only for now)
       this.woodText = null; // Text object to display wood count
       this.debugText = null; // Text object for displaying debug messages
       this.workerWalkSound = null; // Sound effect for worker walking
-      this.cuttingTimer = null; // Timer event for cutting
+      //this.cuttingTimer = null; // Timer now stored on worker
       this.chopSound = null; // Sound effect for chopping
       this.gameStarted = false; // Flag to prevent logic running before start
     }
@@ -94,6 +96,9 @@
      * This function runs once after 'preload' is complete.
      */
     create() {
+      const gameWidth = this.sys.game.config.width;
+      const gameHeight = this.sys.game.config.height;
+
       // Set background color
       this.cameras.main.setBackgroundColor('#228B22'); // Forest green
 
@@ -111,33 +116,52 @@
       this.debugText.setDepth(1000);
       this.debugText.setText("Debug Output:\nClick overlay to start."); // Initial message
 
-      // --- House Setup ---
-      this.house = this.add.image(100, 500, 'house');
+      // --- Player House Setup ---
+      this.house = this.add.image(100, gameHeight - 100, 'house'); // Bottom-left
       this.house.setOrigin(0.5, 1);
       this.house.health = 50;
       this.house.maxHealth = 50;
-      this.createHealthBar(this.house, 60); // Unit health bar
+      this.createHealthBar(this.house, 60, 0x00ff00); // Green health bar
 
-      // --- Worker Setup ---
-      this.worker = this.add.sprite(this.sys.game.config.width / 2, this.sys.game.config.height / 2, 'worker_sheet').setOrigin(0.5, 1);
+      // --- Player Worker Setup ---
+      this.worker = this.add.sprite(150, gameHeight - 150, 'worker_sheet').setOrigin(0.5, 1); // Near player house
       this.worker.setFrame(0);
-      //this.worker.setInteractive(); // No longer interactive for selection
-      //this.worker.selected = false; // No longer selected
-      this.worker.state = 'idle'; // <-- Start idle until game starts
+      this.worker.state = 'idle'; // Start idle until game starts
       this.worker.moving = false;
       this.worker.target = null;
       this.worker.isCutting = false;
       this.worker.cuttingTarget = null;
+      this.worker.cuttingTimer = null; // Timer stored on worker
       this.worker.health = 10;
       this.worker.maxHealth = 10;
-      this.createHealthBar(this.worker, 30); // Unit health bar
+      this.createHealthBar(this.worker, 30, 0x00ff00); // Green health bar
+
+      // --- AI House Setup ---
+      this.aiHouse = this.add.image(gameWidth - 100, gameHeight - 100, 'house'); // Bottom-right
+      this.aiHouse.setOrigin(0.5, 1);
+      this.aiHouse.health = 50;
+      this.aiHouse.maxHealth = 50;
+      this.createHealthBar(this.aiHouse, 60, 0xff0000); // Red health bar
+
+      // --- AI Worker Setup ---
+      this.aiWorker = this.add.sprite(gameWidth - 150, gameHeight - 150, 'worker_sheet').setOrigin(0.5, 1); // Near AI house
+      this.aiWorker.setFrame(0);
+      this.aiWorker.state = 'idle'; // Start idle until game starts
+      this.aiWorker.moving = false;
+      this.aiWorker.target = null;
+      this.aiWorker.isCutting = false;
+      this.aiWorker.cuttingTarget = null;
+      this.aiWorker.cuttingTimer = null; // Timer stored on worker
+      this.aiWorker.health = 10;
+      this.aiWorker.maxHealth = 10;
+      this.createHealthBar(this.aiWorker, 30, 0xff0000); // Red health bar
 
 
-      // Load sounds
+      // Load sounds (shared)
       this.workerWalkSound = this.sound.add('worker_walk');
       this.chopSound = this.sound.add('chop_sound');
 
-      // Create animations
+      // Create animations (shared)
       this.anims.create({
           key: 'walk',
           frames: this.anims.generateFrameNumbers('worker_sheet', { start: 0, end: 3 }),
@@ -155,49 +179,47 @@
       this.trees = this.add.group();
       const treeCount = 20;
       for (let i = 0; i < treeCount; i++) {
-        let x = Phaser.Math.Between(50, this.sys.game.config.width - 50);
-        let y = Phaser.Math.Between(50, this.sys.game.config.height - 100);
+        // Avoid spawning too close to *either* house base area
+        let x, y;
+        let tooClose;
+        do {
+            x = Phaser.Math.Between(50, gameWidth - 50);
+            y = Phaser.Math.Between(50, gameHeight - 100); // Keep trees away from bottom edge a bit more
 
-        const houseWidth = this.house.displayWidth;
-        const houseHeight = this.house.displayHeight;
-        const houseCheckX = this.house.x;
-        const houseCheckY = this.house.y - houseHeight / 2;
-        const houseRadius = Math.max(houseWidth, houseHeight) / 2 + 36;
+            const playerHouseDist = Phaser.Math.Distance.Between(x, y, this.house.x, this.house.y - this.house.height / 2);
+            const aiHouseDist = Phaser.Math.Distance.Between(x, y, this.aiHouse.x, this.aiHouse.y - this.aiHouse.height / 2);
+            const houseRadius = Math.max(this.house.width, this.house.height) / 2 + 36; // Use displayWidth/Height?
 
-        if (Phaser.Math.Distance.Between(x, y, houseCheckX, houseCheckY) < houseRadius) {
-             i--;
-             continue;
-        }
+            tooClose = (playerHouseDist < houseRadius * 1.5) || (aiHouseDist < houseRadius * 1.5); // Increase buffer slightly
+
+        } while (tooClose);
+
 
         let tree = this.add.sprite(x, y, 'tree_sheet').setOrigin(0.5, 1);
         tree.setFrame(0);
-        //tree.setInteractive(); // Trees no longer need to be interactive
         tree.health = 10;
-        tree.maxHealth = 10; // Add max health for consistency
+        tree.maxHealth = 10;
         this.trees.add(tree);
       }
-       // House origin set earlier
 
        // --- Start Overlay Logic ---
        const overlay = document.getElementById('start-overlay');
-       if (overlay) { // Check if overlay exists
+       if (overlay) {
             overlay.addEventListener('pointerdown', () => {
-                if (!this.gameStarted) { // Prevent multiple starts
-                    overlay.style.display = 'none'; // Hide overlay
-                    // Attempt to resume audio context
+                if (!this.gameStarted) {
+                    overlay.style.display = 'none';
                     if (this.sound.context.state === 'suspended') {
                         this.sound.context.resume().then(() => {
                             console.log('Audio Context resumed!');
                             this.startGameLogic();
                         }).catch(e => console.error('Error resuming audio context:', e));
                     } else {
-                         this.startGameLogic(); // Context already running
+                         this.startGameLogic();
                     }
                 }
-            }, { once: true }); // Ensure listener only runs once
+            }, { once: true });
        } else {
            console.warn("Start overlay not found!");
-           // Fallback if overlay missing? Maybe start game directly?
            this.startGameLogic();
        }
     }
@@ -207,23 +229,27 @@
      */
     startGameLogic() {
         this.gameStarted = true;
-        this.worker.state = 'chopping'; // Now set worker to chopping state
-        this.debugText.setText("Debug Output:\nGame started. Worker finding trees.");
+        this.worker.state = 'chopping'; // Set player worker state
+        this.aiWorker.state = 'chopping'; // Set AI worker state
+        this.debugText.setText("Debug Output:\nGame started. Workers finding trees.");
         console.log("Game logic started.");
     }
 
 
     /**
-     * Creates health bar graphics for a given unit (worker/house).
+     * Creates health bar graphics for a given unit.
+     * @param {Phaser.GameObjects.Sprite | Phaser.GameObjects.Image} unit - The unit to add the health bar to.
+     * @param {number} barWidth - The width of the health bar.
+     * @param {number} barColor - The color of the health fill (e.g., 0x00ff00 for green).
      */
-     createHealthBar(unit, barWidth) {
+     createHealthBar(unit, barWidth, barColor = 0x00ff00) { // Added barColor parameter
         const barHeight = 8;
         const initialYOffset = -unit.height - 5;
         const x = unit.x;
         const y = unit.y + initialYOffset;
 
         unit.healthBarBg = this.add.rectangle(x, y, barWidth, barHeight, 0x333333).setOrigin(0.5);
-        unit.healthBarFill = this.add.rectangle(x - barWidth / 2, y, barWidth, barHeight, 0x00ff00).setOrigin(0, 0.5); // Green for units
+        unit.healthBarFill = this.add.rectangle(x - barWidth / 2, y, barWidth, barHeight, barColor).setOrigin(0, 0.5); // Use barColor
         unit.healthBarWidth = barWidth;
      }
 
@@ -231,9 +257,9 @@
      * Creates a temporary health bar for the tree being cut.
      */
     createTreeHealthBar(tree) {
-        if (!tree || tree.healthBarBg) return; // Don't create if exists
+        if (!tree || tree.healthBarBg) return;
 
-        const barWidth = 40; // Specific width for tree bar
+        const barWidth = 40;
         const barHeight = 8;
         const yOffset = -tree.height - 5;
         const x = tree.x;
@@ -243,7 +269,6 @@
         tree.healthBarFill = this.add.rectangle(x - barWidth / 2, y, barWidth, barHeight, 0xffffff).setOrigin(0, 0.5); // White for tree
         tree.healthBarWidth = barWidth;
 
-        // Update initial fill and depth immediately
         this.updateTreeHealthBar(tree);
     }
 
@@ -287,24 +312,30 @@
 
 
     /**
-     * Damages the tree currently being cut by the worker. Called by timer.
+     * Damages the tree currently being cut by the specified worker. Called by timer.
+     * @param {Phaser.GameObjects.Sprite} workerSprite - The worker doing the cutting.
      */
-     damageTree() {
-        if (!this.gameStarted || !this.worker.isCutting || !this.worker.cuttingTarget || !this.worker.cuttingTarget.active) {
-            this.stopCutting();
+     damageTree(workerSprite) {
+        if (!this.gameStarted || !workerSprite || !workerSprite.isCutting || !workerSprite.cuttingTarget || !workerSprite.cuttingTarget.active) {
+            this.stopCutting(workerSprite); // Stop cutting for this specific worker
             return;
         }
 
-        const tree = this.worker.cuttingTarget;
+        const tree = workerSprite.cuttingTarget;
         tree.health -= 1;
 
-        this.updateTreeHealthBar(tree); // <-- Update tree health bar visual
+        this.updateTreeHealthBar(tree);
 
-        //this.debugText.setText(`Debug Output:\nCutting tree (Health: ${tree.health})`); // Less verbose debug
+        // Less verbose debug for AI
+        // if (workerSprite === this.worker) {
+        //     this.debugText.setText(`Debug Output:\nCutting tree (Health: ${tree.health})`);
+        // }
 
         if (tree.health <= 0) {
-            this.debugText.setText(`Debug Output:\nTree cut down! Wood: ${this.wood + 10}`); // Show wood gain
-            this.cutTree(tree); // This calls stopCutting, which destroys the bar
+            if (workerSprite === this.worker) { // Only show player wood gain
+                 this.debugText.setText(`Debug Output:\nTree cut down! Wood: ${this.wood + 10}`);
+            }
+            this.cutTree(tree, workerSprite); // Pass worker to cutTree
         } else if (tree.health <= 3.3) {
             tree.setFrame(2);
         } else if (tree.health <= 6.6) {
@@ -315,52 +346,73 @@
      }
 
     /**
-     * Stops the current cutting process and resets worker state.
+     * Stops the current cutting process for a specific worker and resets its state.
+     * @param {Phaser.GameObjects.Sprite} workerSprite - The worker to stop.
      */
-     stopCutting() {
-        const treeToStopCutting = this.worker ? this.worker.cuttingTarget : null; // Get target before resetting worker
+     stopCutting(workerSprite) {
+        if (!workerSprite) return;
 
-        if (this.cuttingTimer) {
-            this.cuttingTimer.remove(false);
-            this.cuttingTimer = null;
+        const treeToStopCutting = workerSprite.cuttingTarget;
+
+        if (workerSprite.cuttingTimer) {
+            workerSprite.cuttingTimer.remove(false);
+            workerSprite.cuttingTimer = null;
         }
-        // Stop sound only if it exists and is playing
+
+        // Stop chop sound only if no workers are cutting AFTER this one stops
+        workerSprite.isCutting = false; // Temporarily set flag to check other worker
+        let otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
         if (this.chopSound && this.chopSound.isPlaying) {
-            this.chopSound.stop();
+            if (!otherWorker || !otherWorker.isCutting) { // If other worker isn't cutting
+                this.chopSound.stop();
+            }
         }
-        if (this.worker) {
-            this.worker.setTexture('worker_sheet');
-            this.worker.anims.stop();
-            this.worker.setFrame(0);
-            this.worker.setFlipX(false);
+        // Restore flag - will be set false again below
+        // workerSprite.isCutting = true; // No, keep it false
 
-            this.worker.isCutting = false;
-            this.worker.cuttingTarget = null;
-            // Worker remains in 'chopping' state unless no trees left or game ended
+
+        workerSprite.setTexture('worker_sheet');
+        workerSprite.anims.stop();
+        workerSprite.setFrame(0);
+        workerSprite.setFlipX(false);
+
+        workerSprite.isCutting = false; // Ensure flag is false
+        workerSprite.cuttingTarget = null;
+
+        // Destroy the health bar of the tree that WAS being cut by THIS worker
+        // Check if the other worker is still cutting this same tree before destroying bar
+        // Re-get otherWorker in case workerSprite was null initially
+        otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
+        if (!otherWorker || !otherWorker.isCutting || otherWorker.cuttingTarget !== treeToStopCutting) {
+             this.destroyTreeHealthBar(treeToStopCutting);
         }
-
-        // Destroy the health bar of the tree that WAS being cut
-        this.destroyTreeHealthBar(treeToStopCutting);
      }
 
 
     /**
-     * Finalizes cutting the tree, adds wood, removes the tree, and checks for win condition.
+     * Finalizes cutting the tree, adds wood for player, removes tree, checks win condition.
+     * @param {Phaser.GameObjects.Sprite} tree - The tree sprite that was cut.
+     * @param {Phaser.GameObjects.Sprite} workerSprite - The worker who cut the tree.
      */
-    cutTree(tree) {
-      // stopCutting is called first, destroying the health bar and resetting worker animation
-      this.stopCutting();
+    cutTree(tree, workerSprite) {
+      // stopCutting is called first, destroying the health bar (if applicable) and resetting worker animation
+      this.stopCutting(workerSprite);
 
       if (!tree || !tree.active) {
         console.warn("Attempted to cut an invalid or inactive tree.");
-        this.destroyTreeHealthBar(tree);
+        this.destroyTreeHealthBar(tree); // Ensure bar is gone
         return;
       }
 
-      this.wood += 10;
-      this.woodText.setText('Wood: ' + this.wood);
+      // Only player gets wood
+      if (workerSprite === this.worker) {
+          this.wood += 10;
+          this.woodText.setText('Wood: ' + this.wood);
+      }
+
       this.trees.remove(tree, true, true); // This destroys the tree sprite
 
+      // Check win condition based on player wood
       const winAmount = 100;
       if (this.wood >= winAmount) {
         this.add.text(this.sys.game.config.width / 2, this.sys.game.config.height / 2,
@@ -370,20 +422,21 @@
                        .setDepth(2000);
         this.input.enabled = false;
         this.tweens.killAll();
-        // Stop sounds explicitly before stopping all sound system processing
         if (this.workerWalkSound && this.workerWalkSound.isPlaying) this.workerWalkSound.stop();
         if (this.chopSound && this.chopSound.isPlaying) this.chopSound.stop();
         this.sound.stopAll();
 
-        if(this.cuttingTimer) this.cuttingTimer.remove();
-        if(this.worker) this.worker.state = 'idle'; // Stop worker on win
-        this.gameStarted = false; // Stop game logic updates
+        if(this.worker && this.worker.cuttingTimer) this.worker.cuttingTimer.remove();
+        if(this.aiWorker && this.aiWorker.cuttingTimer) this.aiWorker.cuttingTimer.remove();
+        if(this.worker) this.worker.state = 'idle';
+        if(this.aiWorker) this.aiWorker.state = 'idle';
+        this.gameStarted = false;
       }
       // After cutting, the worker will automatically look for the next tree in the update loop if game not won
     }
 
     /**
-     * Updates the position and fill of a unit's (worker/house) health bar.
+     * Updates the position and fill of a unit's health bar.
      */
     updateHealthBar(unit) {
         if (!unit || !unit.active || !unit.healthBarBg || !unit.healthBarFill) {
@@ -406,11 +459,12 @@
     }
 
     /**
-     * Finds the closest active tree to the worker.
+     * Finds the closest active tree to the specified worker.
+     * @param {Phaser.GameObjects.Sprite} workerSprite - The worker to find the closest tree for.
      * @returns {Phaser.GameObjects.Sprite | null} The closest tree or null if none found.
      */
-    findClosestTree() {
-        if (!this.worker || !this.trees) return null; // Safety check
+    findClosestTree(workerSprite) {
+        if (!workerSprite || !this.trees) return null;
 
         const activeTrees = this.trees.getChildren().filter(tree => tree.active);
         if (activeTrees.length === 0) {
@@ -421,7 +475,13 @@
         let minDistance = Infinity;
 
         activeTrees.forEach(tree => {
-            const distance = Phaser.Math.Distance.Between(this.worker.x, this.worker.y, tree.x, tree.y);
+            // Avoid targeting a tree that the *other* worker is already cutting
+            let otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
+            if (otherWorker && otherWorker.isCutting && otherWorker.cuttingTarget === tree) {
+                return; // Skip this tree
+            }
+
+            const distance = Phaser.Math.Distance.Between(workerSprite.x, workerSprite.y, tree.x, tree.y);
             if (distance < minDistance) {
                 minDistance = distance;
                 closestTree = tree;
@@ -431,23 +491,24 @@
     }
 
     /**
-     * Sends the worker to move towards and cut a specific tree.
+     * Sends the specified worker to move towards and cut a specific tree.
+     * @param {Phaser.GameObjects.Sprite} workerSprite - The worker to send.
      * @param {Phaser.GameObjects.Sprite} tree - The target tree.
      */
-    sendWorkerToTree(tree) {
-        if (!tree || !tree.active || !this.worker || this.worker.moving || this.worker.isCutting) {
-            return; // Don't send if invalid target or worker busy
+    sendWorkerToTree(workerSprite, tree) {
+        if (!tree || !tree.active || !workerSprite || workerSprite.moving || workerSprite.isCutting) {
+            return;
         }
 
-        this.worker.target = tree;
-        this.worker.moving = true;
+        workerSprite.target = tree;
+        workerSprite.moving = true;
 
         const offset = 50;
         const targetY = tree.y;
         let targetX;
         let faceRightOnArrival;
 
-        if (this.worker.x <= tree.x) {
+        if (workerSprite.x <= tree.x) {
             targetX = tree.x - offset;
             faceRightOnArrival = true;
         } else {
@@ -455,98 +516,112 @@
             faceRightOnArrival = false;
         }
 
-        this.debugText.setText(`Debug Output:\nWorker moving to tree at (${Math.round(tree.x)}, ${Math.round(tree.y)}).`);
+        if (workerSprite === this.worker) { // Only update debug for player
+             this.debugText.setText(`Debug Output:\nWorker moving to tree at (${Math.round(tree.x)}, ${Math.round(tree.y)}).`);
+        }
 
-        const distance = Phaser.Math.Distance.Between(this.worker.x, this.worker.y, targetX, targetY);
+
+        const distance = Phaser.Math.Distance.Between(workerSprite.x, workerSprite.y, targetX, targetY);
         const speed = 100;
         const duration = (distance / speed) * 1000;
 
-        this.worker.anims.play('walk', true);
+        workerSprite.anims.play('walk', true);
 
-        // Ensure walk sound is stopped before playing again
-        if (this.workerWalkSound && this.workerWalkSound.isPlaying) { // Added check for sound object existence
-            this.workerWalkSound.stop();
+        // Play walk sound only if not already playing
+        if (this.workerWalkSound && !this.workerWalkSound.isPlaying) {
+            this.workerWalkSound.play({ loop: true });
         }
-        if (this.workerWalkSound) this.workerWalkSound.play({ loop: true }); // Added check
 
-        if (targetX < this.worker.x) {
-             this.worker.setFlipX(false);
+
+        if (targetX < workerSprite.x) {
+             workerSprite.setFlipX(false);
         } else {
-             this.worker.setFlipX(true);
+             workerSprite.setFlipX(true);
         }
 
         this.tweens.add({
-          targets: this.worker,
+          targets: workerSprite,
           x: targetX,
           y: targetY,
           duration: duration,
           ease: 'Linear',
-          onComplete: () => {
-            if (this.workerWalkSound && this.workerWalkSound.isPlaying) this.workerWalkSound.stop(); // Stop walk sound
-            this.worker.moving = false; // Worker stopped moving
+          onComplete: () => { // Use arrow function for correct 'this' scope
+            // Stop walk sound only if no workers will be moving after this one stops
+            workerSprite.moving = false; // Set moving false *before* checking others
+            if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
+                 let otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
+                 if (!otherWorker || !otherWorker.moving) { // Check if other worker exists and is moving
+                     this.workerWalkSound.stop();
+                 }
+            }
+            // workerSprite.moving = false; // Already set above
 
-            const actualTree = this.worker.target; // Target might have changed? Re-verify
-            if (actualTree && actualTree.active && actualTree === tree) { // Ensure it's the same tree
-                this.worker.isCutting = true;
-                this.worker.cuttingTarget = actualTree;
-                this.debugText.setText(`Debug Output:\nReached tree. Starting to cut (Health: ${actualTree.health}).`);
+            const actualTree = workerSprite.target;
+            if (actualTree && actualTree.active && actualTree === tree) {
+                workerSprite.isCutting = true;
+                workerSprite.cuttingTarget = actualTree;
+                 if (workerSprite === this.worker) { // Only update debug for player
+                    this.debugText.setText(`Debug Output:\nReached tree. Starting to cut (Health: ${actualTree.health}).`);
+                 }
+
 
                 this.createTreeHealthBar(actualTree);
 
-                this.worker.setFlipX(!faceRightOnArrival);
-                this.worker.setTexture('worker_chop_sheet');
-                this.worker.anims.play('chop', true);
+                workerSprite.setFlipX(!faceRightOnArrival);
+                workerSprite.setTexture('worker_chop_sheet');
+                workerSprite.anims.play('chop', true);
 
-                // Ensure chop sound is stopped before playing again
-                if (this.chopSound && this.chopSound.isPlaying) { // Added check
-                    this.chopSound.stop();
+                // Play chop sound (shared) only if not already playing
+                if (this.chopSound && !this.chopSound.isPlaying) {
+                    this.chopSound.play({ loop: true });
                 }
-                if (this.chopSound) this.chopSound.play({ loop: true }); // Added check
 
-                this.cuttingTimer = this.time.addEvent({
+                // Store timer on the worker
+                workerSprite.cuttingTimer = this.time.addEvent({
                     delay: 1000,
-                    callback: this.damageTree,
+                    // Use arrow function to pass worker context to damageTree
+                    callback: () => this.damageTree(workerSprite),
                     callbackScope: this,
                     loop: true
                 });
             } else {
-                 // Target changed or became inactive during travel
-                 this.debugText.setText(`Debug Output:\nReached location, but target invalid.`);
-                 this.worker.target = null;
-                 this.worker.setTexture('worker_sheet');
-                 this.worker.anims.stop();
-                 this.worker.setFrame(0);
-                 this.worker.setFlipX(false);
-                 // State logic in update will find a new target if available
+                 if (workerSprite === this.worker) {
+                     this.debugText.setText(`Debug Output:\nReached location, but target invalid.`);
+                 }
+                 workerSprite.target = null;
+                 workerSprite.setTexture('worker_sheet');
+                 workerSprite.anims.stop();
+                 workerSprite.setFrame(0);
+                 workerSprite.setFlipX(false);
             }
           }
         });
     }
 
     /**
-     * Handles the worker's state machine logic.
+     * Handles a worker's state machine logic.
+     * @param {Phaser.GameObjects.Sprite} workerSprite - The worker whose state to handle.
      */
-    handleWorkerState() {
-        // Only run state logic if game has started
-        if (!this.gameStarted || !this.worker || !this.worker.active) return;
+    handleWorkerState(workerSprite) {
+        if (!this.gameStarted || !workerSprite || !workerSprite.active) return;
 
-        if (this.worker.state === 'chopping' && !this.worker.moving && !this.worker.isCutting) {
-            const closestTree = this.findClosestTree();
+        if (workerSprite.state === 'chopping' && !workerSprite.moving && !workerSprite.isCutting) {
+            const closestTree = this.findClosestTree(workerSprite);
             if (closestTree) {
-                this.sendWorkerToTree(closestTree);
+                this.sendWorkerToTree(workerSprite, closestTree);
             } else {
-                // No trees left
-                this.worker.state = 'idle';
-                this.debugText.setText("Debug Output:\nNo trees left. Worker idle.");
-                // Ensure worker is visually idle
-                this.worker.setTexture('worker_sheet');
-                this.worker.anims.stop();
-                this.worker.setFrame(0);
-                this.worker.setFlipX(false);
+                // No trees left for this worker
+                workerSprite.state = 'idle';
+                 if (workerSprite === this.worker) { // Only update debug for player
+                    this.debugText.setText("Debug Output:\nNo trees left. Worker idle.");
+                 }
+                workerSprite.setTexture('worker_sheet');
+                workerSprite.anims.stop();
+                workerSprite.setFrame(0);
+                workerSprite.setFlipX(false);
             }
-        } else if (this.worker.state === 'idle') {
-            // Worker is idle, do nothing automatically
-            // Could add logic here later if needed
+        } else if (workerSprite.state === 'idle') {
+            // Idle state
         }
     }
 
@@ -555,31 +630,30 @@
      * Game loop update function. Runs continuously.
      */
     update(time, delta) {
-        // Do nothing if game hasn't started
         if (!this.gameStarted) return;
 
-        // --- Handle Worker State ---
-        this.handleWorkerState(); // <-- Manage worker actions based on state
+        // --- Handle Worker States ---
+        this.handleWorkerState(this.worker);
+        this.handleWorkerState(this.aiWorker);
 
         // --- Depth Sorting ---
         const depthSortedSprites = [];
-        if (this.worker && this.worker.active) {
-            depthSortedSprites.push(this.worker);
-        }
+        if (this.worker && this.worker.active) depthSortedSprites.push(this.worker);
+        if (this.aiWorker && this.aiWorker.active) depthSortedSprites.push(this.aiWorker); // Add AI worker
+        if (this.house && this.house.active) depthSortedSprites.push(this.house);
+        if (this.aiHouse && this.aiHouse.active) depthSortedSprites.push(this.aiHouse); // Add AI house
+
         if (this.trees) {
             this.trees.getChildren().forEach(tree => {
                 if (tree.active) {
                     depthSortedSprites.push(tree);
-                    // Also update active tree health bar position in main loop
-                    if(tree.healthBarBg) {
+                    if(tree.healthBarBg) { // Update active tree health bar pos/depth
                        this.updateTreeHealthBar(tree);
                     }
                 }
             });
         }
-         if (this.house && this.house.active) {
-            depthSortedSprites.push(this.house);
-        }
+
 
         depthSortedSprites.sort((a, b) => {
             const yA = a.y;
@@ -598,29 +672,47 @@
         // --- Update Unit Health Bars ---
         this.updateHealthBar(this.worker);
         this.updateHealthBar(this.house);
+        this.updateHealthBar(this.aiWorker); // Update AI worker bar
+        this.updateHealthBar(this.aiHouse); // Update AI house bar
 
 
-        // --- Target / Cutting Checks (Still useful for edge cases like target destroyed mid-action) ---
-        if (this.worker.moving && this.worker.target && !this.worker.target.active) {
-            console.log("Target destroyed during movement, stopping worker.");
-            this.tweens.killTweensOf(this.worker); // Stop movement tween specifically
-            if (this.workerWalkSound && this.workerWalkSound.isPlaying) this.workerWalkSound.stop(); // Stop sound
-            this.worker.setTexture('worker_sheet');
-            this.worker.anims.stop();
-            this.worker.setFrame(0);
-            this.worker.setFlipX(false);
-            this.worker.moving = false;
-            this.worker.target = null;
-            this.debugText.setText(`Debug Output:\nTarget tree disappeared. Worker stopped.`);
-            // State logic will find a new target in the next update if needed
-        }
+        // --- Target / Cutting Checks ---
+        [this.worker, this.aiWorker].forEach( w => {
+            if (!w) return; // Skip if worker doesn't exist
 
-        if (this.worker.isCutting && this.worker.cuttingTarget && !this.worker.cuttingTarget.active) {
-             console.log("Target destroyed during cutting, stopping worker.");
-             this.stopCutting(); // This resets texture/anim and destroys bar
-             this.debugText.setText(`Debug Output:\nCutting target disappeared. Worker stopped.`);
-             // State logic will find a new target in the next update if needed
-        }
+            if (w.moving && w.target && !w.target.active) {
+                console.log("Target destroyed during movement, stopping worker:", w === this.aiWorker ? "AI" : "Player");
+                this.tweens.killTweensOf(w);
+
+                // Refined sound stop logic when target destroyed mid-move
+                w.moving = false; // Set moving false *before* checking others
+                if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
+                    let otherWorker = (w === this.worker) ? this.aiWorker : this.worker;
+                    if (!otherWorker || !otherWorker.moving) { // Check if other worker exists and is moving
+                        this.workerWalkSound.stop();
+                    }
+                }
+                // w.moving = false; // Already set above
+
+                w.setTexture('worker_sheet');
+                w.anims.stop();
+                w.setFrame(0);
+                w.setFlipX(false);
+                //w.moving = false; // Already set above
+                w.target = null;
+                 if (w === this.worker) {
+                    this.debugText.setText(`Debug Output:\nTarget tree disappeared. Worker stopped.`);
+                 }
+            }
+
+            if (w.isCutting && w.cuttingTarget && !w.cuttingTarget.active) {
+                 console.log("Target destroyed during cutting, stopping worker:", w === this.aiWorker ? "AI" : "Player");
+                 this.stopCutting(w); // Pass the specific worker
+                 if (w === this.worker) {
+                    this.debugText.setText(`Debug Output:\nCutting target disappeared. Worker stopped.`);
+                 }
+            }
+        });
     }
   }
 
