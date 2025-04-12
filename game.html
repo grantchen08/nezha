@@ -51,7 +51,7 @@
       // Load the house image
       this.load.image('house', 'https://grantchen08.github.io/nezha/house.png');
       // Load the chopping sound effect
-      this.load.audio('chop_sound', 'https://grantchen08.github.io/nezha/chop_tree.mp3'); // <-- ADDED chop sound
+      this.load.audio('chop_sound', 'https://grantchen08.github.io/nezha/chop_tree.mp3');
 
       // Basic error handling for asset loading
       this.load.on('loaderror', (file) => {
@@ -102,7 +102,7 @@
       // Load the walking sound
       this.workerWalkSound = this.sound.add('worker_walk');
       // Load the chopping sound
-      this.chopSound = this.sound.add('chop_sound'); // <-- ADDED chop sound instance
+      this.chopSound = this.sound.add('chop_sound');
 
       // Create the walking animation
       this.anims.create({
@@ -169,13 +169,32 @@
                 this.stopCutting();
             }
 
-            this.worker.target = tree;
+            this.worker.target = tree; // Still track the actual tree object
             this.worker.moving = true;
             this.worker.selected = false;
             this.worker.clearTint();
-            this.debugText.setText(`Debug Output:\nTree clicked. Moving worker to (${Math.round(tree.x)}, ${Math.round(tree.y)}).`);
 
-            const distance = Phaser.Math.Distance.Between(this.worker.x, this.worker.y, tree.x, tree.y);
+
+            // Calculate target position NEXT TO the tree on the closest side
+            const offset = 40; // Distance offset from tree center
+            const targetY = tree.y; // Keep same Y level
+            let targetX;
+            let faceRightOnArrival; // Flag to determine final facing direction
+
+            if (this.worker.x <= tree.x) {
+                // Worker is left or center, move to left side of tree
+                targetX = tree.x - offset;
+                faceRightOnArrival = true; // Face right towards tree
+            } else {
+                // Worker is right, move to right side of tree
+                targetX = tree.x + offset;
+                faceRightOnArrival = false; // Face left towards tree
+            }
+
+
+            this.debugText.setText(`Debug Output:\nTree clicked. Moving worker to (${Math.round(targetX)}, ${Math.round(targetY)}).`);
+
+            const distance = Phaser.Math.Distance.Between(this.worker.x, this.worker.y, targetX, targetY); // Use target position
             const speed = 100;
             const duration = (distance / speed) * 1000;
 
@@ -184,37 +203,40 @@
                  this.workerWalkSound.play({ loop: true });
             }
 
-            if (tree.x < this.worker.x) {
-                 this.worker.setFlipX(false);
+            // Flip worker based on target X relative to current X
+            if (targetX < this.worker.x) {
+                 this.worker.setFlipX(false); // Moving left
             } else {
-                 this.worker.setFlipX(true);
+                 this.worker.setFlipX(true); // Moving right
             }
 
-            // Move worker to the tree
+            // Move worker to the calculated position next to the tree
             this.tweens.add({
               targets: this.worker,
-              x: tree.x,
-              y: tree.y,
+              x: targetX, // <-- Use calculated target X
+              y: targetY, // <-- Use calculated target Y
               duration: duration,
               ease: 'Linear',
               onComplete: () => {
-                // Reached tree, stop moving animation/sound
+                // Reached destination, stop moving animation/sound
                 this.workerWalkSound.stop();
                 this.worker.anims.stop();
                 this.worker.setFrame(0);
-                this.worker.setFlipX(false); // Face default direction
+                // Make worker face the tree based on arrival side
+                this.worker.setFlipX(faceRightOnArrival); // <-- Use flag to set facing direction
                 this.worker.moving = false;
 
-                // Start cutting this specific tree
-                if (tree.active) { // Check if tree still exists
+                // Start cutting the target tree (use the stored tree object)
+                const actualTree = this.worker.target; // Get the actual tree object
+                if (actualTree && actualTree.active) { // Check if tree still exists
                     this.worker.isCutting = true;
-                    this.worker.cuttingTarget = tree;
-                    this.debugText.setText(`Debug Output:\nReached tree. Starting to cut (Health: ${tree.health}).`);
+                    this.worker.cuttingTarget = actualTree; // Store the actual tree being cut
+                    this.debugText.setText(`Debug Output:\nReached tree. Starting to cut (Health: ${actualTree.health}).`);
                     // Play chopping sound
-                    if (this.chopSound && !this.chopSound.isPlaying) { // <-- PLAY chop sound
+                    if (this.chopSound && !this.chopSound.isPlaying) {
                         this.chopSound.play({ loop: true });
                     }
-                    // Start the damage timer (1 DPS = 1 damage every 1000ms)
+                    // Start the damage timer
                     this.cuttingTimer = this.time.addEvent({
                         delay: 1000,
                         callback: this.damageTree,
@@ -272,7 +294,7 @@
             this.cuttingTimer.remove(false); // Remove timer
             this.cuttingTimer = null;
         }
-        if (this.chopSound && this.chopSound.isPlaying) { // <-- STOP chop sound
+        if (this.chopSound && this.chopSound.isPlaying) {
             this.chopSound.stop();
         }
         if (this.worker) { // Check if worker exists
@@ -282,7 +304,7 @@
             if (!this.worker.moving) {
                  this.worker.anims.stop();
                  this.worker.setFrame(0);
-                 this.worker.setFlipX(false);
+                 this.worker.setFlipX(false); // Reset flip to default
             }
         }
         // Do not update debug text here, context-specific messages are better
