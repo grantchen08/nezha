@@ -42,7 +42,7 @@
           frameHeight: 64
       });
       // Load the worker chopping spritesheet
-      this.load.spritesheet('worker_chop_sheet', 'https://grantchen08.github.io/nezha/worker_chop.png', { // <-- ADDED chop sheet
+      this.load.spritesheet('worker_chop_sheet', 'https://grantchen08.github.io/nezha/worker_chop.png', {
           frameWidth: 64,
           frameHeight: 64
       });
@@ -94,9 +94,9 @@
       // --- House Setup ---
       this.house = this.add.image(100, 500, 'house');
       this.house.setOrigin(0.5, 1);
-      this.house.health = 50; // <-- House health
+      this.house.health = 50;
       this.house.maxHealth = 50;
-      this.createHealthBar(this.house, 60); // Create health bar for house
+      this.createHealthBar(this.house, 60); // Unit health bar
 
       // --- Worker Setup ---
       this.worker = this.add.sprite(this.sys.game.config.width / 2, this.sys.game.config.height / 2, 'worker_sheet').setOrigin(0.5, 1);
@@ -107,9 +107,9 @@
       this.worker.target = null;
       this.worker.isCutting = false;
       this.worker.cuttingTarget = null;
-      this.worker.health = 10; // <-- Worker health
+      this.worker.health = 10;
       this.worker.maxHealth = 10;
-      this.createHealthBar(this.worker, 30); // Create health bar for worker
+      this.createHealthBar(this.worker, 30); // Unit health bar
 
 
       // Load sounds
@@ -123,7 +123,7 @@
           frameRate: 8,
           repeat: -1
       });
-      this.anims.create({ // <-- ADDED chop animation
+      this.anims.create({
           key: 'chop',
           frames: this.anims.generateFrameNumbers('worker_chop_sheet', { start: 0, end: 1 }),
           frameRate: 4,
@@ -169,12 +169,13 @@
         tree.setFrame(0);
         tree.setInteractive();
         tree.health = 10;
+        tree.maxHealth = 10; // Add max health for consistency
         this.trees.add(tree);
 
         tree.on('pointerdown', () => {
           if (this.worker.selected && !this.worker.moving) {
             if (this.worker.isCutting) {
-                this.stopCutting();
+                this.stopCutting(); // This will also destroy the old tree health bar
             }
 
             this.worker.target = tree;
@@ -182,7 +183,7 @@
             this.worker.selected = false;
             this.worker.clearTint();
 
-            const offset = 50; // Increased offset slightly for wider chop sprite
+            const offset = 50;
             const targetY = tree.y;
             let targetX;
             let faceRightOnArrival;
@@ -220,7 +221,6 @@
               ease: 'Linear',
               onComplete: () => {
                 this.workerWalkSound.stop();
-                // Don't stop anims or set frame yet, change texture first
                 this.worker.moving = false;
 
                 const actualTree = this.worker.target;
@@ -229,10 +229,11 @@
                     this.worker.cuttingTarget = actualTree;
                     this.debugText.setText(`Debug Output:\nReached tree. Starting to cut (Health: ${actualTree.health}).`);
 
-                    // Switch texture and play chop animation
-                    this.worker.setFlipX(!faceRightOnArrival); // <-- Inverted flip logic for chopping sprite
-                    this.worker.setTexture('worker_chop_sheet'); // <-- Change texture
-                    this.worker.anims.play('chop', true); // <-- Play chop animation
+                    this.createTreeHealthBar(actualTree); // <-- Create health bar for the specific tree
+
+                    this.worker.setFlipX(!faceRightOnArrival);
+                    this.worker.setTexture('worker_chop_sheet');
+                    this.worker.anims.play('chop', true);
 
                     if (this.chopSound && !this.chopSound.isPlaying) {
                         this.chopSound.play({ loop: true });
@@ -246,7 +247,6 @@
                 } else {
                      this.debugText.setText(`Debug Output:\nReached tree location, but tree is gone.`);
                      this.worker.target = null;
-                     // If target gone, reset to idle texture/frame
                      this.worker.setTexture('worker_sheet');
                      this.worker.anims.stop();
                      this.worker.setFrame(0);
@@ -261,32 +261,76 @@
     }
 
     /**
-     * Creates health bar graphics for a given unit.
-     * @param {Phaser.GameObjects.Sprite | Phaser.GameObjects.Image} unit - The unit to add the health bar to.
-     * @param {number} barWidth - The width of the health bar.
+     * Creates health bar graphics for a given unit (worker/house).
      */
      createHealthBar(unit, barWidth) {
         const barHeight = 8;
-        // Calculate initial offset based on initial height
         const initialYOffset = -unit.height - 5;
         const x = unit.x;
         const y = unit.y + initialYOffset;
 
-        // Background
-        unit.healthBarBg = this.add.rectangle(
-            x, y, barWidth, barHeight, 0x333333 // Dark grey
-        ).setOrigin(0.5); // Center the background
-
-        // Health fill
-        unit.healthBarFill = this.add.rectangle(
-            x - barWidth / 2, y, barWidth, barHeight, 0x00ff00 // Bright green
-        ).setOrigin(0, 0.5); // Align left edge, vertically centered
-
-        // Store width for updates
+        unit.healthBarBg = this.add.rectangle(x, y, barWidth, barHeight, 0x333333).setOrigin(0.5);
+        unit.healthBarFill = this.add.rectangle(x - barWidth / 2, y, barWidth, barHeight, 0x00ff00).setOrigin(0, 0.5); // Green for units
         unit.healthBarWidth = barWidth;
-
-        // Initial depth set in update loop relative to unit
      }
+
+    /**
+     * Creates a temporary health bar for the tree being cut.
+     */
+    createTreeHealthBar(tree) {
+        if (!tree || tree.healthBarBg) return; // Don't create if exists
+
+        const barWidth = 40; // Specific width for tree bar
+        const barHeight = 8;
+        const yOffset = -tree.height - 5;
+        const x = tree.x;
+        const y = tree.y + yOffset;
+
+        tree.healthBarBg = this.add.rectangle(x, y, barWidth, barHeight, 0x333333).setOrigin(0.5);
+        tree.healthBarFill = this.add.rectangle(x - barWidth / 2, y, barWidth, barHeight, 0xffffff).setOrigin(0, 0.5); // White for tree
+        tree.healthBarWidth = barWidth;
+
+        // Update initial fill and depth immediately
+        this.updateTreeHealthBar(tree);
+    }
+
+     /**
+      * Updates the position and fill of a specific tree's health bar.
+      */
+     updateTreeHealthBar(tree) {
+         if (!tree || !tree.active || !tree.healthBarBg || !tree.healthBarFill) {
+             return;
+         }
+         const barWidth = tree.healthBarWidth;
+         const yOffset = -tree.height - 5;
+         const x = tree.x;
+         const y = tree.y + yOffset;
+
+         tree.healthBarBg.setPosition(x, y);
+         tree.healthBarFill.setPosition(x - barWidth / 2, y);
+
+         const fillWidth = Math.max(0, (tree.health / tree.maxHealth) * barWidth);
+         tree.healthBarFill.width = fillWidth;
+
+         tree.healthBarBg.setDepth(tree.depth + 1);
+         tree.healthBarFill.setDepth(tree.depth + 2);
+     }
+
+    /**
+     * Destroys the health bar associated with a specific tree.
+     */
+    destroyTreeHealthBar(tree) {
+        if (tree) {
+            if (tree.healthBarBg) {
+                tree.healthBarBg.destroy();
+                tree.healthBarBg = null;
+            }
+            if (tree.healthBarFill) {
+                tree.healthBarFill.destroy();
+                tree.healthBarFill = null;
+            }
+        }
+    }
 
 
     /**
@@ -301,11 +345,13 @@
         const tree = this.worker.cuttingTarget;
         tree.health -= 1;
 
+        this.updateTreeHealthBar(tree); // <-- Update tree health bar visual
+
         this.debugText.setText(`Debug Output:\nCutting tree (Health: ${tree.health})`);
 
         if (tree.health <= 0) {
             this.debugText.setText(`Debug Output:\nTree cut down!`);
-            this.cutTree(tree);
+            this.cutTree(tree); // This calls stopCutting, which destroys the bar
         } else if (tree.health <= 3.3) {
             tree.setFrame(2);
         } else if (tree.health <= 6.6) {
@@ -319,6 +365,8 @@
      * Stops the current cutting process and resets worker state.
      */
      stopCutting() {
+        const treeToStopCutting = this.worker ? this.worker.cuttingTarget : null; // Get target before resetting worker
+
         if (this.cuttingTimer) {
             this.cuttingTimer.remove(false);
             this.cuttingTimer = null;
@@ -327,34 +375,37 @@
             this.chopSound.stop();
         }
         if (this.worker) {
-            // Reset texture and animation FIRST
-            this.worker.setTexture('worker_sheet'); // <-- Reset texture
+            this.worker.setTexture('worker_sheet');
             this.worker.anims.stop();
-            this.worker.setFrame(0); // Set to idle frame of worker_sheet
-            this.worker.setFlipX(false); // Reset flip
+            this.worker.setFrame(0);
+            this.worker.setFlipX(false);
 
-            // Then reset state flags
             this.worker.isCutting = false;
             this.worker.cuttingTarget = null;
         }
+
+        // Destroy the health bar of the tree that WAS being cut
+        this.destroyTreeHealthBar(treeToStopCutting);
      }
 
 
     /**
      * Finalizes cutting the tree, adds wood, removes the tree, and checks for win condition.
-     * @param {Phaser.GameObjects.Sprite} tree - The tree sprite that was cut.
      */
     cutTree(tree) {
-      this.stopCutting(); // This now also resets worker texture/animation
+      // stopCutting is called first, destroying the health bar
+      this.stopCutting();
 
       if (!tree || !tree.active) {
         console.warn("Attempted to cut an invalid or inactive tree.");
+        // Ensure bar is gone if somehow stopCutting didn't catch it
+        this.destroyTreeHealthBar(tree);
         return;
       }
 
       this.wood += 10;
       this.woodText.setText('Wood: ' + this.wood);
-      this.trees.remove(tree, true, true);
+      this.trees.remove(tree, true, true); // This destroys the tree sprite
 
       const winAmount = 100;
       if (this.wood >= winAmount) {
@@ -371,32 +422,24 @@
     }
 
     /**
-     * Updates the position and fill of a unit's health bar.
-     * @param {Phaser.GameObjects.Sprite | Phaser.GameObjects.Image} unit - The unit whose health bar needs updating.
+     * Updates the position and fill of a unit's (worker/house) health bar.
      */
     updateHealthBar(unit) {
         if (!unit || !unit.active || !unit.healthBarBg || !unit.healthBarFill) {
-            // Optionally destroy bars if unit becomes inactive
-            // if (unit.healthBarBg) unit.healthBarBg.destroy();
-            // if (unit.healthBarFill) unit.healthBarFill.destroy();
             return;
         }
 
         const barWidth = unit.healthBarWidth;
-        // Use the current height of the unit for positioning, accounts for texture changes
-        const yOffset = -unit.displayHeight - 5; // <-- Use displayHeight
+        const yOffset = -unit.displayHeight - 5;
         const x = unit.x;
         const y = unit.y + yOffset;
 
-        // Update positions
         unit.healthBarBg.setPosition(x, y);
         unit.healthBarFill.setPosition(x - barWidth / 2, y);
 
-        // Update fill width based on health
         const fillWidth = Math.max(0, (unit.health / unit.maxHealth) * barWidth);
         unit.healthBarFill.width = fillWidth;
 
-        // Update depth relative to unit
         unit.healthBarBg.setDepth(unit.depth + 1);
         unit.healthBarFill.setDepth(unit.depth + 2);
     }
@@ -404,8 +447,6 @@
 
     /**
      * Game loop update function. Runs continuously.
-     * @param {number} time - The current game time.
-     * @param {number} delta - The time elapsed since the last frame (in ms).
      */
     update(time, delta) {
         // --- Depth Sorting ---
@@ -417,6 +458,10 @@
             this.trees.getChildren().forEach(tree => {
                 if (tree.active) {
                     depthSortedSprites.push(tree);
+                    // Also update active tree health bar position in main loop
+                    if(tree.healthBarBg) {
+                       this.updateTreeHealthBar(tree);
+                    }
                 }
             });
         }
@@ -438,7 +483,7 @@
             sprite.setDepth(index);
         });
 
-        // --- Update Health Bars ---
+        // --- Update Unit Health Bars ---
         this.updateHealthBar(this.worker);
         this.updateHealthBar(this.house);
 
@@ -448,7 +493,6 @@
             console.log("Target destroyed during movement, stopping worker.");
             this.tweens.killTweensOf(this.worker);
             this.workerWalkSound.stop();
-            // Ensure correct texture/frame if stopped mid-move
             this.worker.setTexture('worker_sheet');
             this.worker.anims.stop();
             this.worker.setFrame(0);
@@ -460,7 +504,7 @@
 
         if (this.worker.isCutting && this.worker.cuttingTarget && !this.worker.cuttingTarget.active) {
              console.log("Target destroyed during cutting, stopping worker.");
-             this.stopCutting(); // This resets texture/anim
+             this.stopCutting(); // This resets texture/anim and destroys bar
              this.debugText.setText(`Debug Output:\nCutting target disappeared. Worker stopped.`);
         }
     }
