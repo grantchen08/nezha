@@ -41,6 +41,11 @@
           frameWidth: 32,
           frameHeight: 64
       });
+      // Load the worker chopping spritesheet
+      this.load.spritesheet('worker_chop_sheet', 'https://grantchen08.github.io/nezha/worker_chop.png', { // <-- ADDED chop sheet
+          frameWidth: 64,
+          frameHeight: 64
+      });
       // Load the walking sound effect
       this.load.audio('worker_walk', 'https://grantchen08.github.io/nezha/worker_walk.mp3');
       // Load the tree spritesheet
@@ -118,6 +123,12 @@
           frameRate: 8,
           repeat: -1
       });
+      this.anims.create({ // <-- ADDED chop animation
+          key: 'chop',
+          frames: this.anims.generateFrameNumbers('worker_chop_sheet', { start: 0, end: 1 }),
+          frameRate: 4,
+          repeat: -1
+      });
 
       // --- Event Handlers ---
       this.worker.on('pointerdown', (pointer) => {
@@ -171,7 +182,7 @@
             this.worker.selected = false;
             this.worker.clearTint();
 
-            const offset = 40;
+            const offset = 50; // Increased offset slightly for wider chop sprite
             const targetY = tree.y;
             let targetX;
             let faceRightOnArrival;
@@ -209,9 +220,7 @@
               ease: 'Linear',
               onComplete: () => {
                 this.workerWalkSound.stop();
-                this.worker.anims.stop();
-                this.worker.setFrame(0);
-                this.worker.setFlipX(faceRightOnArrival);
+                // Don't stop anims or set frame yet, change texture first
                 this.worker.moving = false;
 
                 const actualTree = this.worker.target;
@@ -219,6 +228,12 @@
                     this.worker.isCutting = true;
                     this.worker.cuttingTarget = actualTree;
                     this.debugText.setText(`Debug Output:\nReached tree. Starting to cut (Health: ${actualTree.health}).`);
+
+                    // Switch texture and play chop animation
+                    this.worker.setFlipX(!faceRightOnArrival); // <-- Inverted flip logic for chopping sprite
+                    this.worker.setTexture('worker_chop_sheet'); // <-- Change texture
+                    this.worker.anims.play('chop', true); // <-- Play chop animation
+
                     if (this.chopSound && !this.chopSound.isPlaying) {
                         this.chopSound.play({ loop: true });
                     }
@@ -231,6 +246,11 @@
                 } else {
                      this.debugText.setText(`Debug Output:\nReached tree location, but tree is gone.`);
                      this.worker.target = null;
+                     // If target gone, reset to idle texture/frame
+                     this.worker.setTexture('worker_sheet');
+                     this.worker.anims.stop();
+                     this.worker.setFrame(0);
+                     this.worker.setFlipX(false);
                 }
               }
             });
@@ -247,9 +267,10 @@
      */
      createHealthBar(unit, barWidth) {
         const barHeight = 8;
-        const yOffset = -unit.height - 5; // Position above the unit (origin is bottom center)
+        // Calculate initial offset based on initial height
+        const initialYOffset = -unit.height - 5;
         const x = unit.x;
-        const y = unit.y + yOffset;
+        const y = unit.y + initialYOffset;
 
         // Background
         unit.healthBarBg = this.add.rectangle(
@@ -306,13 +327,15 @@
             this.chopSound.stop();
         }
         if (this.worker) {
+            // Reset texture and animation FIRST
+            this.worker.setTexture('worker_sheet'); // <-- Reset texture
+            this.worker.anims.stop();
+            this.worker.setFrame(0); // Set to idle frame of worker_sheet
+            this.worker.setFlipX(false); // Reset flip
+
+            // Then reset state flags
             this.worker.isCutting = false;
             this.worker.cuttingTarget = null;
-            if (!this.worker.moving) {
-                 this.worker.anims.stop();
-                 this.worker.setFrame(0);
-                 this.worker.setFlipX(false);
-            }
         }
      }
 
@@ -322,7 +345,7 @@
      * @param {Phaser.GameObjects.Sprite} tree - The tree sprite that was cut.
      */
     cutTree(tree) {
-      this.stopCutting();
+      this.stopCutting(); // This now also resets worker texture/animation
 
       if (!tree || !tree.active) {
         console.warn("Attempted to cut an invalid or inactive tree.");
@@ -353,12 +376,15 @@
      */
     updateHealthBar(unit) {
         if (!unit || !unit.active || !unit.healthBarBg || !unit.healthBarFill) {
-            // Clean up bars if unit is gone? Optional for now.
+            // Optionally destroy bars if unit becomes inactive
+            // if (unit.healthBarBg) unit.healthBarBg.destroy();
+            // if (unit.healthBarFill) unit.healthBarFill.destroy();
             return;
         }
 
         const barWidth = unit.healthBarWidth;
-        const yOffset = -unit.height - 5;
+        // Use the current height of the unit for positioning, accounts for texture changes
+        const yOffset = -unit.displayHeight - 5; // <-- Use displayHeight
         const x = unit.x;
         const y = unit.y + yOffset;
 
@@ -413,8 +439,8 @@
         });
 
         // --- Update Health Bars ---
-        this.updateHealthBar(this.worker); // <-- Update worker health bar
-        this.updateHealthBar(this.house); // <-- Update house health bar
+        this.updateHealthBar(this.worker);
+        this.updateHealthBar(this.house);
 
 
         // --- Target / Cutting Checks ---
@@ -422,6 +448,8 @@
             console.log("Target destroyed during movement, stopping worker.");
             this.tweens.killTweensOf(this.worker);
             this.workerWalkSound.stop();
+            // Ensure correct texture/frame if stopped mid-move
+            this.worker.setTexture('worker_sheet');
             this.worker.anims.stop();
             this.worker.setFrame(0);
             this.worker.setFlipX(false);
@@ -432,7 +460,7 @@
 
         if (this.worker.isCutting && this.worker.cuttingTarget && !this.worker.cuttingTarget.active) {
              console.log("Target destroyed during cutting, stopping worker.");
-             this.stopCutting();
+             this.stopCutting(); // This resets texture/anim
              this.debugText.setText(`Debug Output:\nCutting target disappeared. Worker stopped.`);
         }
     }
