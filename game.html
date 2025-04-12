@@ -28,6 +28,7 @@
       this.debugText = null; // Text object for displaying debug messages
       this.workerWalkSound = null; // Sound effect for worker walking
       this.cuttingTimer = null; // Timer event for cutting
+      this.chopSound = null; // Sound effect for chopping
     }
 
     /**
@@ -43,12 +44,14 @@
       // Load the walking sound effect
       this.load.audio('worker_walk', 'https://grantchen08.github.io/nezha/worker_walk.mp3');
       // Load the tree spritesheet
-      this.load.spritesheet('tree_sheet', 'https://grantchen08.github.io/nezha/tree.png', { // <-- UPDATED to spritesheet
+      this.load.spritesheet('tree_sheet', 'https://grantchen08.github.io/nezha/tree.png', {
           frameWidth: 64,
           frameHeight: 64
       });
       // Load the house image
       this.load.image('house', 'https://grantchen08.github.io/nezha/house.png');
+      // Load the chopping sound effect
+      this.load.audio('chop_sound', 'https://grantchen08.github.io/nezha/chop_tree.mp3'); // <-- ADDED chop sound
 
       // Basic error handling for asset loading
       this.load.on('loaderror', (file) => {
@@ -98,6 +101,8 @@
 
       // Load the walking sound
       this.workerWalkSound = this.sound.add('worker_walk');
+      // Load the chopping sound
+      this.chopSound = this.sound.add('chop_sound'); // <-- ADDED chop sound instance
 
       // Create the walking animation
       this.anims.create({
@@ -150,7 +155,7 @@
         }
 
         // Create the tree sprite using the spritesheet
-        let tree = this.add.sprite(x, y, 'tree_sheet').setOrigin(0.5, 1); // <-- Use sprite
+        let tree = this.add.sprite(x, y, 'tree_sheet').setOrigin(0.5, 1);
         tree.setFrame(0); // Start with full health frame
         tree.setInteractive();
         tree.health = 10; // Custom property: tree health
@@ -205,6 +210,10 @@
                     this.worker.isCutting = true;
                     this.worker.cuttingTarget = tree;
                     this.debugText.setText(`Debug Output:\nReached tree. Starting to cut (Health: ${tree.health}).`);
+                    // Play chopping sound
+                    if (this.chopSound && !this.chopSound.isPlaying) { // <-- PLAY chop sound
+                        this.chopSound.play({ loop: true });
+                    }
                     // Start the damage timer (1 DPS = 1 damage every 1000ms)
                     this.cuttingTimer = this.time.addEvent({
                         delay: 1000,
@@ -263,6 +272,9 @@
             this.cuttingTimer.remove(false); // Remove timer
             this.cuttingTimer = null;
         }
+        if (this.chopSound && this.chopSound.isPlaying) { // <-- STOP chop sound
+            this.chopSound.stop();
+        }
         if (this.worker) { // Check if worker exists
             this.worker.isCutting = false;
             this.worker.cuttingTarget = null;
@@ -282,7 +294,7 @@
      * @param {Phaser.GameObjects.Sprite} tree - The tree sprite that was cut.
      */
     cutTree(tree) {
-      this.stopCutting(); // Stop the timer and reset cutting state first
+      this.stopCutting(); // Stop the timer and sound, reset cutting state first
 
       // Safety check: ensure tree is valid before proceeding
       if (!tree || !tree.active) {
@@ -307,7 +319,7 @@
                        .setDepth(2000);
         this.input.enabled = false;
         this.tweens.killAll();
-        this.sound.stopAll();
+        this.sound.stopAll(); // This will stop the chop sound too
         if(this.cuttingTimer) this.cuttingTimer.remove(); // Ensure timer is gone
       }
     }
@@ -365,7 +377,7 @@
         // Check if the worker is cutting a target that no longer exists
         if (this.worker.isCutting && this.worker.cuttingTarget && !this.worker.cuttingTarget.active) {
              console.log("Target destroyed during cutting, stopping worker.");
-             this.stopCutting(); // Stop the cutting process
+             this.stopCutting(); // Stop the cutting process (also stops sound)
              this.debugText.setText(`Debug Output:\nCutting target disappeared. Worker stopped.`);
         }
 
