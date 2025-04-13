@@ -147,7 +147,8 @@
         lineSpacing: 4 // Add some spacing between lines
       });
       this.debugText.setDepth(1000);
-      this.logDebug("Click overlay to start."); // Use new log function
+      this.debugText.visible = false; // Start hidden
+      this.logDebug("Click overlay to start."); // Log initial message even if hidden
 
 
       // --- Player House Setup ---
@@ -240,6 +241,8 @@
        // --- Input Handling ---
        this.input.on('gameobjectdown', this.handleObjectClick, this);
        this.input.on('pointerdown', this.handleBackgroundClick, this);
+       // Add listener for the 'D' key
+       this.input.keyboard.on('keydown-D', this.toggleDebugDisplay, this);
 
 
        // --- Start Overlay Logic ---
@@ -262,6 +265,22 @@
            console.warn("Start overlay not found!");
            this.startGameLogic(); // Attempt to start anyway if overlay missing
        }
+    }
+
+    /**
+     * Toggles the visibility of the debug text area.
+     */
+    toggleDebugDisplay() {
+        if (this.debugText) {
+            this.debugText.visible = !this.debugText.visible;
+            // Optionally log the toggle action itself (if debug is visible)
+            if (this.debugText.visible) {
+                 this.logDebug(`Debug display toggled ${this.debugText.visible ? 'ON' : 'OFF'}`);
+            } else {
+                // If turning off, log to console instead
+                console.log("DEBUG: Debug display toggled OFF");
+            }
+        }
     }
 
     /**
