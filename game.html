@@ -270,6 +270,14 @@
        this.input.on('pointerdown', this.handleBackgroundClick, this);
        // Add listener for the 'D' key
        this.input.keyboard.on('keydown-D', this.toggleDebugDisplay, this);
+       // Add listener for 's' key (lowercase) to speed up
+       this.input.keyboard.on('keydown-S', (event) => {
+            if (event.shiftKey) { // Check if Shift is held for uppercase 'S'
+                this.changeTimeScale(0.5); // Slow down
+            } else {
+                this.changeTimeScale(2); // Speed up (lowercase 's')
+            }
+       });
 
 
        // --- Start Overlay Logic ---
@@ -289,9 +297,34 @@
                 }
             }, { once: true });
        } else {
-           console.warn("Start overlay not found!");
-           this.startGameLogic(); // Attempt to start anyway if overlay missing
+            console.warn("Start overlay not found!");
+            this.startGameLogic(); // Attempt to start anyway if overlay missing
        }
+    }
+
+    /**
+     * Changes the game's time scale.
+     * @param {number} factor - The factor to multiply the current time scale by (e.g., 2 to double, 0.5 to halve).
+     */
+    changeTimeScale(factor) {
+        if (this.gameOver || !this.gameStarted) return; // Don't change speed if game not running
+
+        // Ensure factor is positive
+        if (factor <= 0) {
+            this.logDebug("Invalid time scale factor.");
+            return;
+        }
+
+        this.time.timeScale *= factor;
+
+        // Optional: Clamp the time scale to reasonable limits
+        this.time.timeScale = Phaser.Math.Clamp(this.time.timeScale, 0.125, 8); // e.g., min 1/8, max 8x speed
+
+        this.logDebug(`Time scale set to ${this.time.timeScale.toFixed(3)}x`);
+
+        // Adjust sound playback rates if desired (more complex, might need individual sound adjustment)
+        // Example (adjusting global sound playback rate - might affect pitch):
+        // this.sound.setRate(this.time.timeScale);
     }
 
     /**
@@ -306,8 +339,8 @@
                  // Refresh text content when turned on
                  this.debugText.setText('Debug Output:\n' + this.debugHistory.join('\n'));
             } else {
-                // If turning off, log to console instead
-                console.log("DEBUG: Debug display toggled OFF");
+                 // If turning off, log to console instead
+                 console.log("DEBUG: Debug display toggled OFF");
             }
         }
     }
@@ -436,10 +469,10 @@
                     workerToMove.setFlipX(false); // Default to right
                      // Stop walk sound if needed
                      if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
-                        let otherWorker = this.aiWorker;
-                        if (!otherWorker || !otherWorker.moving) {
-                             this.workerWalkSound.stop();
-                        }
+                         let otherWorker = this.aiWorker;
+                         if (!otherWorker || !otherWorker.moving) {
+                              this.workerWalkSound.stop();
+                         }
                     }
                 }
                 // Clear any potential targets
@@ -465,12 +498,12 @@
 
                  // Start walk sound if needed
                  if (this.workerWalkSound && !this.workerWalkSound.isPlaying) {
-                    // Check if AI is also moving
-                    let otherWorker = this.aiWorker;
-                    if (!otherWorker || !otherWorker.moving) { // Start only if AI isn't moving
-                         this.workerWalkSound.play({ loop: true });
-                    }
-                }
+                     // Check if AI is also moving
+                     let otherWorker = this.aiWorker;
+                     if (!otherWorker || !otherWorker.moving) { // Start only if AI isn't moving
+                          this.workerWalkSound.play({ loop: true });
+                     }
+                 }
 
                 // Start the actual movement tween
                 this.tweens.add({
@@ -492,31 +525,31 @@
                         this.logDebug('Worker reached destination and is idle.');
                         // Stop walk sound if needed
                         if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
-                           let otherWorker = this.aiWorker; // Only AI could be moving now
-                           if (!otherWorker || !otherWorker.moving) {
-                                this.workerWalkSound.stop();
-                           }
-                       }
+                             let otherWorker = this.aiWorker; // Only AI could be moving now
+                             if (!otherWorker || !otherWorker.moving) {
+                                  this.workerWalkSound.stop();
+                             }
+                        }
                     },
                     onStop: () => { // Handle interruption of *this specific* move
                          if (!workerToMove.active) return;
                          // If interrupted, just go idle where it stopped
                          workerToMove.moving = false;
                          if (workerToMove.state === 'moving_to_idle') { // Only change state if it was still moving to idle
-                            workerToMove.state = 'idle';
-                            workerToMove.setTexture('worker_sheet');
-                            workerToMove.anims.stop();
-                            workerToMove.setFrame(0);
-                            workerToMove.setFlipX(false);
-                            this.logDebug('Worker move interrupted, going idle.');
+                             workerToMove.state = 'idle';
+                             workerToMove.setTexture('worker_sheet');
+                             workerToMove.anims.stop();
+                             workerToMove.setFrame(0);
+                             workerToMove.setFlipX(false);
+                             this.logDebug('Worker move interrupted, going idle.');
                          }
-                          // Stop walk sound if needed
+                         // Stop walk sound if needed
                          if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
-                            let otherWorker = this.aiWorker;
-                            if (!otherWorker || !otherWorker.moving) {
-                                 this.workerWalkSound.stop();
-                            }
-                        }
+                             let otherWorker = this.aiWorker;
+                             if (!otherWorker || !otherWorker.moving) {
+                                  this.workerWalkSound.stop();
+                             }
+                         }
                     }
                 });
 
@@ -571,7 +604,7 @@
         unit.healthBarWidth = barWidth; // Store the width on the unit
         // Ensure health bars are initially drawn above the unit
         this.updateHealthBar(unit); // Call update to set initial position and depth correctly
-     }
+      }
 
     /**
      * Creates a temporary health bar for the tree being cut.
@@ -597,9 +630,9 @@
        */
       updateTreeHealthBar(tree) {
          if (!tree || !tree.active || !tree.healthBarBg || !tree.healthBarFill) {
-             // If bar doesn't exist or tree inactive, attempt to destroy remnants
-             this.destroyTreeHealthBar(tree);
-             return;
+              // If bar doesn't exist or tree inactive, attempt to destroy remnants
+              this.destroyTreeHealthBar(tree);
+              return;
          }
          const barWidth = tree.healthBarWidth;
          const yOffset = -tree.displayHeight - 5; // Use displayHeight
@@ -659,7 +692,7 @@
         } else {
             tree.setFrame(0); // Full health frame
         }
-     }
+      }
 
     /**
      * Stops the current cutting process for a specific worker and resets its state.
@@ -741,7 +774,7 @@
                   this.destroyTreeHealthBar(treeToStopCutting);
              }
         }
-     }
+      }
 
 
     /**
@@ -820,8 +853,8 @@
              const aiBusy = this.aiWorker && (this.aiWorker.moving || this.aiWorker.isCutting || this.aiWorker.isBuilding); // Include AI building check
 
             if (!playerBusy && !aiBusy) { // Only draw if no trees AND no workers busy
-                this.endGame("Draw!", '#ffffff'); // White for draw
-                return;
+                 this.endGame("Draw!", '#ffffff'); // White for draw
+                 return;
             }
         }
     }
@@ -840,10 +873,10 @@
         this.logDebug(`Game Over: ${message}`); // Use new log function
 
         this.add.text(this.sys.game.config.width / 2, this.sys.game.config.height / 2,
-                       message,
-                       { font: '48px Arial', fill: color, align: 'center' })
-                       .setOrigin(0.5)
-                       .setDepth(2000); // Ensure message is on top
+                                message,
+                                { font: '48px Arial', fill: color, align: 'center' })
+                                .setOrigin(0.5)
+                                .setDepth(2000); // Ensure message is on top
 
         // Stop everything
         this.input.enabled = false; // Disable input on game over
@@ -943,9 +976,9 @@
     }
 
      /**
-     * Destroys the health bar associated with any unit/building.
-     */
-    destroyHealthBar(unit) {
+      * Destroys the health bar associated with any unit/building.
+      */
+     destroyHealthBar(unit) {
         if (unit) {
             if (unit.healthBarBg) {
                 unit.healthBarBg.destroy();
@@ -956,7 +989,7 @@
                 unit.healthBarFill = null;
             }
         }
-    }
+     }
 
 
     /**
@@ -986,8 +1019,8 @@
             }
              // Check if AI worker is targeting/cutting this tree
              if (this.aiWorker && this.aiWorker.active) {
-                  if (this.aiWorker.isCutting && this.aiWorker.cuttingTarget === tree) isTreeBusy = true;
-                  if (this.aiWorker.moving && this.aiWorker.target === tree && this.aiWorker.state === 'moving_to_chop') isTreeBusy = true;
+                 if (this.aiWorker.isCutting && this.aiWorker.cuttingTarget === tree) isTreeBusy = true;
+                 if (this.aiWorker.moving && this.aiWorker.target === tree && this.aiWorker.state === 'moving_to_chop') isTreeBusy = true;
              }
 
 
@@ -1021,27 +1054,27 @@
          const workerId = workerSprite === this.worker ? 'Player' : 'AI';
          this.logDebug(`Sending ${workerId} worker to tree.`);
          if (workerSprite.isCutting) {
-             this.stopCutting(workerSprite); // Will handle partial wood
+              this.stopCutting(workerSprite); // Will handle partial wood
          }
           if (workerSprite.isBuilding) { // NEW: Stop building if commanded to chop
-             this.stopBuilding(workerSprite);
+              this.stopBuilding(workerSprite);
          }
          if (workerSprite.moving) {
-             this.tweens.killTweensOf(workerSprite); // Stop existing movement
-             workerSprite.moving = false;
-             workerSprite.target = null; // Clear old target
-             // Reset visuals immediately after stopping tween
-             workerSprite.setTexture('worker_sheet');
-             workerSprite.anims.stop();
-             workerSprite.setFrame(0);
-             workerSprite.setFlipX(false); // Default to right
-             // Stop walk sound if needed
-             if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
-                let otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
-                if (!otherWorker || !otherWorker.moving) {
-                     this.workerWalkSound.stop();
-                }
-            }
+              this.tweens.killTweensOf(workerSprite); // Stop existing movement
+              workerSprite.moving = false;
+              workerSprite.target = null; // Clear old target
+              // Reset visuals immediately after stopping tween
+              workerSprite.setTexture('worker_sheet');
+              workerSprite.anims.stop();
+              workerSprite.setFrame(0);
+              workerSprite.setFlipX(false); // Default to right
+              // Stop walk sound if needed
+              if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
+                  let otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
+                  if (!otherWorker || !otherWorker.moving) {
+                       this.workerWalkSound.stop();
+                  }
+             }
          }
           // Clear any potential targets
          workerSprite.cuttingTarget = null;
@@ -1150,11 +1183,11 @@
 
                 // --- Chop Sound Start Logic ---
                  if (this.chopSound && !this.chopSound.isPlaying) {
-                    // Check if other worker is also chopping
-                    let otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
-                    if (!otherWorker || !otherWorker.isCutting) { // Start only if other isn't chopping
-                         this.chopSound.play({ loop: true });
-                    }
+                     // Check if other worker is also chopping
+                     let otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
+                     if (!otherWorker || !otherWorker.isCutting) { // Start only if other isn't chopping
+                          this.chopSound.play({ loop: true });
+                     }
                  }
                 // --- End Chop Sound Start Logic ---
 
@@ -1210,10 +1243,10 @@
     }
 
      /**
-     * Starts the process of building a barrack for a specific side.
-     * @param {Phaser.GameObjects.Sprite} workerSprite - The worker doing the building.
-     * @param {string} side - 'player' or 'ai'.
-     */
+      * Starts the process of building a barrack for a specific side.
+      * @param {Phaser.GameObjects.Sprite} workerSprite - The worker doing the building.
+      * @param {string} side - 'player' or 'ai'.
+      */
      startBuildingBarrack(workerSprite, side = 'player') {
          const isPlayer = side === 'player';
          const woodCount = isPlayer ? this.wood : this.aiWood;
@@ -1254,9 +1287,9 @@
              workerSprite.setFrame(0);
              workerSprite.setFlipX(false);
               if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
-                 let otherWorker = isPlayer ? this.aiWorker : this.worker;
-                 if (!otherWorker || !otherWorker.moving) this.workerWalkSound.stop();
-             }
+                  let otherWorker = isPlayer ? this.aiWorker : this.worker;
+                  if (!otherWorker || !otherWorker.moving) this.workerWalkSound.stop();
+              }
          }
          workerSprite.cuttingTarget = null;
          workerSprite.buildingTarget = null;
@@ -1310,7 +1343,7 @@
          workerSprite.moving = true;
 
           if (this.workerWalkSound && !this.workerWalkSound.isPlaying) {
-              this.workerWalkSound.play({ loop: true });
+               this.workerWalkSound.play({ loop: true });
           }
 
          this.tweens.add({
@@ -1324,8 +1357,8 @@
 
                  workerSprite.moving = false;
                   if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
-                     let otherWorker = isPlayer ? this.aiWorker : this.worker;
-                     if (!otherWorker || !otherWorker.moving) this.workerWalkSound.stop();
+                      let otherWorker = isPlayer ? this.aiWorker : this.worker;
+                      if (!otherWorker || !otherWorker.moving) this.workerWalkSound.stop();
                  }
 
                  // --- Start Building ---
@@ -1341,7 +1374,7 @@
 
                  // Start building sound (using chop sound)
                  if (this.chopSound && !this.chopSound.isPlaying) {
-                      this.chopSound.play({ loop: true });
+                       this.chopSound.play({ loop: true });
                   }
 
                  // Start building timer
@@ -1363,36 +1396,36 @@
                   workerSprite.setFlipX(false);
                   this.logDebug(`${side} worker move to build site interrupted.`);
                    if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
-                     let otherWorker = isPlayer ? this.aiWorker : this.worker;
-                     if (!otherWorker || !otherWorker.moving) this.workerWalkSound.stop();
+                       let otherWorker = isPlayer ? this.aiWorker : this.worker;
+                       if (!otherWorker || !otherWorker.moving) this.workerWalkSound.stop();
                   }
                   // Cancel the build process
                   const barrackToCancel = isPlayer ? this.playerBarrack : this.aiBarrack;
                   if(barrackToCancel && barrackToCancel.isBuilding) {
-                      this.destroyHealthBar(barrackToCancel); // Destroy bar first
-                      barrackToCancel.destroy(); // Remove placeholder
-                      if (isPlayer) {
-                          this.playerBarrack = null;
-                          this.playerBarrackBuilding = false;
-                          // Refund player wood
-                          this.wood += woodCost; this.woodText.setText('Wood: ' + this.wood);
-                      } else {
-                          this.aiBarrack = null;
-                          this.aiBarrackBuilding = false;
-                           // Refund AI wood
-                          this.aiWood += woodCost; this.aiWoodText.setText('AI Wood: ' + this.aiWood);
-                      }
-                      this.logDebug(`${side} build process cancelled due to move interruption.`);
+                       this.destroyHealthBar(barrackToCancel); // Destroy bar first
+                       barrackToCancel.destroy(); // Remove placeholder
+                       if (isPlayer) {
+                           this.playerBarrack = null;
+                           this.playerBarrackBuilding = false;
+                           // Refund player wood
+                           this.wood += woodCost; this.woodText.setText('Wood: ' + this.wood);
+                       } else {
+                           this.aiBarrack = null;
+                           this.aiBarrackBuilding = false;
+                            // Refund AI wood
+                           this.aiWood += woodCost; this.aiWoodText.setText('AI Wood: ' + this.aiWood);
+                       }
+                       this.logDebug(`${side} build process cancelled due to move interruption.`);
                   }
               }
          });
-     }
+      }
 
 
      /**
-     * Increases health of the structure being built. Called by timer.
-     * @param {Phaser.GameObjects.Sprite} workerSprite - The worker doing the building.
-     */
+      * Increases health of the structure being built. Called by timer.
+      * @param {Phaser.GameObjects.Sprite} workerSprite - The worker doing the building.
+      */
      buildStructure(workerSprite) {
          if (this.gameOver || !workerSprite || !workerSprite.active || !workerSprite.isBuilding || !workerSprite.buildingTarget || !workerSprite.buildingTarget.active) {
              this.stopBuilding(workerSprite); // Stop if state is invalid
@@ -1428,13 +1461,13 @@
              // Set worker back to finding trees (or idle if none)
              workerSprite.state = 'chopping';
          }
-     }
+      }
 
-      /**
-     * Stops the current building process for a specific worker.
-     * @param {Phaser.GameObjects.Sprite} workerSprite - The worker to stop.
-     */
-     stopBuilding(workerSprite) {
+       /**
+       * Stops the current building process for a specific worker.
+       * @param {Phaser.GameObjects.Sprite} workerSprite - The worker to stop.
+       */
+      stopBuilding(workerSprite) {
          if (!workerSprite || !workerSprite.isBuilding) return;
 
          const side = workerSprite === this.worker ? 'Player' : 'AI';
@@ -1464,7 +1497,7 @@
          workerSprite.setFrame(0);
          workerSprite.setFlipX(false);
          // Don't reset state here, let the calling function decide the next state
-     }
+      }
 
 
     /**
@@ -1500,7 +1533,7 @@
                 const closestTree = this.findClosestTree(workerSprite);
                 if (closestTree) {
                      if (workerSprite.state === 'idle') {
-                        this.logDebug(`${workerSprite === this.worker ? 'Player' : 'AI'} worker idle, finding tree.`);
+                         this.logDebug(`${workerSprite === this.worker ? 'Player' : 'AI'} worker idle, finding tree.`);
                      }
                     this.sendWorkerToTree(workerSprite, closestTree);
                 } else {
@@ -1508,9 +1541,9 @@
                     if (workerSprite.state !== 'idle') { // Only log if state changes
                         workerSprite.state = 'idle';
                          if (workerSprite === this.worker) { // Only update debug for player
-                            this.logDebug("No available trees. Worker idle.");
+                             this.logDebug("No available trees. Worker idle.");
                          } else {
-                             this.logDebug("No available trees. AI Worker idle.");
+                              this.logDebug("No available trees. AI Worker idle.");
                          }
                          // Reset visuals to idle
                          workerSprite.setTexture('worker_sheet');
@@ -1568,7 +1601,7 @@
                     depthSortedSprites.push(tree);
                     // Update active tree health bar position/depth continuously
                     if(tree.healthBarBg) {
-                        this.updateTreeHealthBar(tree);
+                         this.updateTreeHealthBar(tree);
                     }
                 } else {
                     // Ensure health bar is destroyed if tree becomes inactive unexpectedly
