@@ -602,8 +602,13 @@
         unit.healthBarBg = this.add.rectangle(x, y, barWidth, barHeight, 0x333333).setOrigin(0.5);
         unit.healthBarFill = this.add.rectangle(x - barWidth / 2, y, barWidth, barHeight, barColor).setOrigin(0, 0.5);
         unit.healthBarWidth = barWidth; // Store the width on the unit
+
+        // Explicitly set depth upon creation
+        if (unit.healthBarBg) unit.healthBarBg.setDepth(unit.depth + 1);
+        if (unit.healthBarFill) unit.healthBarFill.setDepth(unit.depth + 2);
+
         // Ensure health bars are initially drawn above the unit
-        this.updateHealthBar(unit); // Call update to set initial position and depth correctly
+        this.updateHealthBar(unit); // Call update to set initial position and fill correctly
       }
 
     /**
@@ -621,6 +626,10 @@
         tree.healthBarBg = this.add.rectangle(x, y, barWidth, barHeight, 0x333333).setOrigin(0.5);
         tree.healthBarFill = this.add.rectangle(x - barWidth / 2, y, barWidth, barHeight, 0xffffff).setOrigin(0, 0.5); // White for tree
         tree.healthBarWidth = barWidth;
+
+        // Explicitly set depth upon creation
+        if (tree.healthBarBg) tree.healthBarBg.setDepth(tree.depth + 1);
+        if (tree.healthBarFill) tree.healthBarFill.setDepth(tree.depth + 2);
 
         this.updateTreeHealthBar(tree); // Update position and fill immediately
     }
