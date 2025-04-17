@@ -54,8 +54,8 @@
   const FOG_CELL_SIZE = 64; // Size of fog of war grid cells
   const FOG_COLOR = 0x000000; // Black fog
   const FOG_ALPHA = 0.75; // Semi-transparent fog
-  const RANDOM_MOVE_MAX_DIST = 150; // Max distance for random idle movement
-  const RANDOM_MOVE_MIN_DIST = 50; // Min distance for random idle movement
+  // const RANDOM_MOVE_MAX_DIST = 150; // No longer needed for random moves
+  // const RANDOM_MOVE_MIN_DIST = 50; // No longer needed for random moves
 
 
   /**
@@ -167,8 +167,8 @@
       this.gridHeight = Math.ceil(gameHeight / FOG_CELL_SIZE);
       this.fogGrid = [];
       this.fogRects = []; // Store references to the graphics objects
-      this.fogLayer = this.add.graphics(); // Graphics object for fog visuals - DEPRECATED, using individual rects
-      this.fogLayer.setDepth(5000); // Ensure fog is drawn on top of game elements but below UI
+      // this.fogLayer = this.add.graphics(); // Graphics object for fog visuals - DEPRECATED
+      // this.fogLayer.setDepth(5000); // Ensure fog is drawn on top of game elements but below UI
 
       for (let y = 0; y < this.gridHeight; y++) {
           this.fogGrid[y] = [];
@@ -360,13 +360,11 @@
         // Check bounds
         if (gridY >= 0 && gridY < this.gridHeight && gridX >= 0 && gridX < this.gridWidth) {
             // If already revealed, do nothing
-            // *** FIX: Use gridY and gridX instead of y and x ***
             if (this.fogGrid[gridY][gridX]) return;
 
             this.fogGrid[gridY][gridX] = true; // Mark as revealed in the data grid
 
             // Make the corresponding fog rectangle invisible
-            // *** FIX: Use gridY and gridX instead of y and x ***
             if (this.fogRects[gridY][gridX]) {
                 this.fogRects[gridY][gridX].setVisible(false);
                 // Optional: Destroy the rectangle for performance if it won't be hidden again
@@ -398,30 +396,35 @@
             }
         }
         */
+    }
 
-        // --- Optional More Accurate Version for Buildings ---
-        /*
-        if (gameObject.width && gameObject.height) { // Check if it has dimensions
-             const topLeft = this.worldToGrid(gameObject.getTopLeft().x, gameObject.getTopLeft().y);
-             const topRight = this.worldToGrid(gameObject.getTopRight().x, gameObject.getTopRight().y);
-             const bottomLeft = this.worldToGrid(gameObject.getBottomLeft().x, gameObject.getBottomLeft().y);
-             const bottomRight = this.worldToGrid(gameObject.getBottomRight().x, gameObject.getBottomRight().y);
+    /**
+     * Finds the grid coordinates of the nearest hidden fog cell to a unit.
+     * @param {Phaser.GameObjects.Sprite} unit - The unit searching for hidden cells.
+     * @returns {{gridX: number, gridY: number} | null} Coordinates of the nearest hidden cell, or null if all are revealed.
+     */
+    findNearestHiddenCell(unit) {
+        let nearestCell = null;
+        let minDistanceSq = Infinity;
 
-             const minX = Math.min(topLeft.gridX, bottomLeft.gridX);
-             const maxX = Math.max(topRight.gridX, bottomRight.gridX);
-             const minY = Math.min(topLeft.gridY, topRight.gridY);
-             const maxY = Math.max(bottomLeft.gridY, bottomRight.gridY);
+        for (let y = 0; y < this.gridHeight; y++) {
+            for (let x = 0; x < this.gridWidth; x++) {
+                if (!this.fogGrid[y][x]) { // If the cell is hidden
+                    // Calculate world coordinates of the cell center
+                    const cellCenterX = x * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
+                    const cellCenterY = y * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
 
-             for (let gx = minX; gx <= maxX; gx++) {
-                 for (let gy = minY; gy <= maxY; gy++) {
-                     this.revealCell(gx, gy);
-                 }
-             }
-        } else { // For units without clear bounds, use origin
-             const { gridX, gridY } = this.worldToGrid(gameObject.x, gameObject.y);
-             this.revealCell(gridX, gridY);
+                    // Calculate squared distance from unit to cell center
+                    const distanceSq = Phaser.Math.Distance.Squared(unit.x, unit.y, cellCenterX, cellCenterY);
+
+                    if (distanceSq < minDistanceSq) {
+                        minDistanceSq = distanceSq;
+                        nearestCell = { gridX: x, gridY: y };
+                    }
+                }
+            }
         }
-        */
+        return nearestCell;
     }
 
     // --- END FOG OF WAR HELPERS ---
@@ -1006,7 +1009,7 @@
 
 
     /**
-     * Handles a worker's state machine logic, including random movement when idle with no visible targets.
+     * Handles a worker's state machine logic, including exploring nearest hidden cell.
      */
     handleWorkerState(workerSprite) {
         if (!this.gameStarted || this.gameOver || !workerSprite || !workerSprite.active) return;
@@ -1014,8 +1017,8 @@
         const isPlayer = workerSprite.getData('isPlayer');
         const side = isPlayer ? 'player' : 'ai';
 
-        // --- Check for Build Order (only if idle) ---
-        if (!workerSprite.moving && !workerSprite.isCutting && !workerSprite.isBuilding && workerSprite.state !== 'moving_randomly') {
+        // --- Check for Build Order (only if idle-like state) ---
+        if (!workerSprite.moving && !workerSprite.isCutting && !workerSprite.isBuilding && workerSprite.state !== 'moving_to_explore') {
              const woodCount = isPlayer ? this.wood : this.aiWood; const existingBarrack = isPlayer ? this.playerBarrack : this.aiBarrack;
              const isBuildingThisBarrack = isPlayer ? this.playerBarrackBuilding : this.aiBarrackBuilding; const house = isPlayer ? this.house : this.aiHouse;
              if (house && house.active && !(existingBarrack && existingBarrack.active) && !isBuildingThisBarrack && woodCount >= BARRACK_WOOD_COST) {
@@ -1023,7 +1026,7 @@
              }
         }
 
-        // --- Default Actions (Chopping/Idle/Random Move) ---
+        // --- Default Actions (Chopping/Idle/Explore) ---
         // Only act if the worker is not currently busy moving, cutting, or building
         if (!workerSprite.moving && !workerSprite.isCutting && !workerSprite.isBuilding) {
             if (workerSprite.state === 'chopping' || workerSprite.state === 'idle') {
@@ -1032,17 +1035,27 @@
                     if (workerSprite.state === 'idle') this.logDebug(`${side} worker idle, found visible tree.`);
                     this.sendWorkerToTree(workerSprite, closestVisibleTree);
                 } else {
-                    // No visible trees left - initiate random movement
-                    if (workerSprite.state !== 'moving_randomly') { // Only start if not already moving randomly
-                        this.logDebug(`No visible trees. ${side} Worker moving randomly.`);
-                        this.startRandomMovement(workerSprite);
+                    // No visible trees left - find nearest hidden cell to explore
+                    const nearestHidden = this.findNearestHiddenCell(workerSprite);
+                    if (nearestHidden) {
+                        this.logDebug(`No visible trees. ${side} Worker exploring nearest hidden cell at (${nearestHidden.gridX}, ${nearestHidden.gridY}).`);
+                        const targetX = nearestHidden.gridX * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
+                        const targetY = nearestHidden.gridY * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
+                        this.startUnitMove(workerSprite, targetX, targetY, 'moving_to_explore', 'idle'); // Move to explore, become idle on arrival
+                    } else {
+                        // No visible trees AND no hidden cells - truly idle
+                        if (workerSprite.state !== 'idle') {
+                             this.logDebug(`No visible trees or hidden cells. ${side} Worker truly idle.`);
+                             workerSprite.state = 'idle';
+                             workerSprite.setTexture('worker_sheet'); workerSprite.anims.stop(); workerSprite.setFrame(0); workerSprite.setFlipX(false);
+                        }
+                        // Check for draw condition if truly idle
+                        if (this.trees.countActive(true) === 0) this.checkEndCondition();
                     }
-                    // Check for draw condition if truly idle (no trees anywhere)
-                    if (this.trees.countActive(true) === 0) this.checkEndCondition();
                 }
             }
             // Reset state if somehow stuck
-             else if (workerSprite.state === 'moving_to_chop' || workerSprite.state === 'moving_to_idle' || workerSprite.state === 'moving_to_build' || workerSprite.state === 'building' || workerSprite.state === 'moving_randomly') {
+             else if (workerSprite.state === 'moving_to_chop' || workerSprite.state === 'moving_to_idle' || workerSprite.state === 'moving_to_build' || workerSprite.state === 'building' || workerSprite.state === 'moving_to_explore') {
                  this.logDebug(`${side} Worker stuck in ${workerSprite.state} without flag. Resetting to idle.`);
                  workerSprite.state = 'idle'; workerSprite.setTexture('worker_sheet'); workerSprite.anims.stop(); workerSprite.setFrame(0); workerSprite.setFlipX(false);
              }
@@ -1222,7 +1235,7 @@
     }
 
     /**
-     * Handles a spearman's state machine logic, including random movement.
+     * Handles a spearman's state machine logic, including exploring nearest hidden cell.
      */
     handleSpearmanState(spearman) {
         if (!this.gameStarted || this.gameOver || !spearman || !spearman.active) return;
@@ -1241,10 +1254,20 @@
                     this.sendSpearmanToAttack(spearman, target);
                 }
             } else {
-                // No visible targets found - initiate random movement
-                if (spearman.state !== 'moving_randomly') { // Only start if not already moving randomly
-                    this.logDebug(`No visible targets. ${side} Spearman moving randomly.`);
-                    this.startRandomMovement(spearman);
+                // No visible targets found - find nearest hidden cell to explore
+                const nearestHidden = this.findNearestHiddenCell(spearman);
+                if (nearestHidden) {
+                     this.logDebug(`No visible targets. ${side} Spearman exploring nearest hidden cell at (${nearestHidden.gridX}, ${nearestHidden.gridY}).`);
+                     const targetX = nearestHidden.gridX * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
+                     const targetY = nearestHidden.gridY * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
+                     this.startUnitMove(spearman, targetX, targetY, 'moving_to_explore', 'idle'); // Move to explore, become idle on arrival
+                } else {
+                    // No visible targets AND no hidden cells - truly idle
+                     if (spearman.state !== 'idle') {
+                          this.logDebug(`No visible targets or hidden cells. ${side} Spearman truly idle.`);
+                          spearman.state = 'idle';
+                          spearman.setTexture('spearman_walk_sheet'); spearman.anims.stop(); spearman.setFrame(0); spearman.setFlipX(!spearman.getData('isPlayer'));
+                     }
                 }
             }
         }
@@ -1253,8 +1276,8 @@
              this.logDebug(`${side} spearman's target disappeared while attacking. Stopping.`);
              this.stopAttacking(spearman); spearman.state = 'idle';
         }
-         // Safety check: If stuck in moving state without flag (unchanged)
-         else if ((spearman.state === 'moving_to_attack' || spearman.state === 'moving_randomly') && !spearman.moving) {
+         // Safety check: If stuck in moving state without flag
+         else if ((spearman.state === 'moving_to_attack' || spearman.state === 'moving_to_explore') && !spearman.moving) {
               this.logDebug(`${side} spearman stuck in ${spearman.state} without moving flag. Resetting to idle.`);
               spearman.state = 'idle'; spearman.target = null; spearman.setTexture('spearman_walk_sheet');
               spearman.anims.stop(); spearman.setFrame(0); spearman.setFlipX(!spearman.getData('isPlayer'));
@@ -1262,31 +1285,31 @@
     }
 
     /**
-     * Initiates a random movement tween for a unit.
+     * Initiates a movement tween for a unit towards a specific point.
      * @param {Phaser.GameObjects.Sprite} unit - The worker or spearman to move.
+     * @param {number} targetX - The destination x-coordinate.
+     * @param {number} targetY - The destination y-coordinate.
+     * @param {string} movingState - The state to set while moving (e.g., 'moving_to_explore').
+     * @param {string} arrivalState - The state to set when the destination is reached (e.g., 'idle').
      */
-    startRandomMovement(unit) {
+    startUnitMove(unit, targetX, targetY, movingState, arrivalState) {
         if (!unit || !unit.active || unit.moving || unit.isCutting || unit.isBuilding || unit.isAttacking) return; // Don't move if busy
 
         const unitType = unit.getData('unitType');
         const side = unit.getData('isPlayer') ? 'Player' : 'AI';
-        unit.state = 'moving_randomly';
+        unit.state = movingState; // Set the specified moving state
         unit.moving = true;
+        unit.target = null; // Clear any previous interaction target
 
-        // Calculate random destination
-        const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
-        const distance = Phaser.Math.FloatBetween(RANDOM_MOVE_MIN_DIST, RANDOM_MOVE_MAX_DIST);
-        let targetX = unit.x + Math.cos(angle) * distance;
-        let targetY = unit.y + Math.sin(angle) * distance;
-
-        // Clamp to game bounds
+        // Clamp target to game bounds (just in case)
         targetX = Phaser.Math.Clamp(targetX, 0, this.sys.game.config.width);
         targetY = Phaser.Math.Clamp(targetY, 0, this.sys.game.config.height);
 
-        this.logDebug(`${side} ${unitType} moving randomly to (${Math.round(targetX)}, ${Math.round(targetY)})`);
+        this.logDebug(`${side} ${unitType} moving to (${Math.round(targetX)}, ${Math.round(targetY)}). State: ${movingState}`);
 
         const speed = (unitType === 'worker') ? 100 : 80; // Workers move faster
-        const moveDuration = (Phaser.Math.Distance.Between(unit.x, unit.y, targetX, targetY) / speed) * 1000 || 1;
+        const distance = Phaser.Math.Distance.Between(unit.x, unit.y, targetX, targetY);
+        const moveDuration = (distance / speed) * 1000 || 1;
         const animKey = (unitType === 'worker') ? 'worker_walk' : 'spearman_walk';
 
         unit.anims.play(animKey, true);
@@ -1307,14 +1330,15 @@
             duration: moveDuration,
             ease: 'Linear',
             onComplete: () => {
-                if (!unit.active || unit.state !== 'moving_randomly') return; // Check state
+                if (!unit.active || unit.state !== movingState) return; // Check state
                 unit.moving = false;
-                unit.state = 'idle'; // Go back to idle to re-evaluate targets
+                unit.state = arrivalState; // Set the specified arrival state
                 unit.anims.stop();
                 unit.setTexture(unitType === 'worker' ? 'worker_sheet' : 'spearman_walk_sheet');
                 unit.setFrame(0);
-                unit.setFlipX(!unit.getData('isPlayer')); // Reset facing for spearmen, workers default right
-                this.logDebug(`${side} ${unitType} finished random move, now idle.`);
+                // Reset facing: workers default right, spearmen face opponent side
+                unit.setFlipX(unitType === 'spearman' ? !unit.getData('isPlayer') : false);
+                this.logDebug(`${side} ${unitType} finished move, now ${arrivalState}.`);
                 // Stop walk sound if needed
                 if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
                      let pWorkerMoving = this.worker && this.worker.active && this.worker.moving;
@@ -1327,13 +1351,13 @@
                 if (!unit.active) return;
                 const wasMoving = unit.moving;
                 unit.moving = false;
-                if (unit.state === 'moving_randomly') { // Only reset if still in this state
-                    unit.state = 'idle';
+                if (unit.state === movingState) { // Only reset if still in this state
+                    unit.state = 'idle'; // Default to idle if interrupted
                     unit.anims.stop();
                     unit.setTexture(unitType === 'worker' ? 'worker_sheet' : 'spearman_walk_sheet');
                     unit.setFrame(0);
-                    unit.setFlipX(!unit.getData('isPlayer'));
-                    this.logDebug(`${side} ${unitType} random move interrupted, going idle.`);
+                    unit.setFlipX(unitType === 'spearman' ? !unit.getData('isPlayer') : false);
+                    this.logDebug(`${side} ${unitType} move (${movingState}) interrupted, going idle.`);
                 }
                 // Stop walk sound if needed
                 if (this.workerWalkSound && this.workerWalkSound.isPlaying && wasMoving) {
@@ -1346,7 +1370,8 @@
         });
     }
 
-    // --- END COMBAT & RANDOM MOVE ---
+
+    // --- END COMBAT & MOVEMENT ---
 
 
     /**
@@ -1423,3 +1448,4 @@
 </script>
 </body>
 </html>
+" from the Canv
