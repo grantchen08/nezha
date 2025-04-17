@@ -78,7 +78,8 @@
       this.aiWoodText = null; // Text object to display AI wood count
       this.debugText = null; // Text object for displaying debug messages
       this.workerWalkSound = null; // Sound effect for worker walking
-      this.chopSound = null; // Sound effect for chopping / attacking
+      this.chopSound = null; // Sound effect for chopping / building
+      this.spearmanAttackSound = null; // Sound effect for spearman attacking
       this.gameStarted = false; // Flag to prevent logic running before start
       this.gameOver = false; // Flag to prevent multiple end game calls
       this.selectedWorker = null; // Keep track of the selected worker
@@ -137,7 +138,7 @@
           frameWidth: 64,
           frameHeight: 64
       });
-      // Load the spearman attacking spritesheet <<< NEW ASSET
+      // Load the spearman attacking spritesheet
       this.load.spritesheet('spearman_attack_sheet', 'https://grantchen08.github.io/nezha/spearman_attack.png', {
           frameWidth: 64,
           frameHeight: 64
@@ -151,8 +152,10 @@
       });
       // Load the house image
       this.load.image('house', 'https://grantchen08.github.io/nezha/house.png');
-      // Load the chopping/attacking sound effect
+      // Load the chopping/building sound effect
       this.load.audio('chop_sound', 'https://grantchen08.github.io/nezha/chop_tree.mp3');
+      // Load the spearman attack sound effect
+      this.load.audio('spearman_attack_sound', 'https://grantchen08.github.io/nezha/attack.mp3');
 
       // Basic error handling for asset loading
       this.load.on('loaderror', (file) => {
@@ -300,9 +303,10 @@
       // AI worker is not interactive for the player
 
 
-      // Load sounds (shared)
+      // Load sounds
       this.workerWalkSound = this.sound.add('worker_walk');
-      this.chopSound = this.sound.add('chop_sound'); // Used for chopping and attacking
+      this.chopSound = this.sound.add('chop_sound'); // For chopping and building
+      this.spearmanAttackSound = this.sound.add('spearman_attack_sound'); // For attacking
 
       // Create animations (shared)
       this.anims.create({
@@ -323,7 +327,6 @@
           frameRate: 6, // Adjust frame rate as needed
           repeat: -1
       });
-      // <<< NEW ANIMATION >>>
        this.anims.create({
           key: 'spearman_attack',
           frames: this.anims.generateFrameNumbers('spearman_attack_sheet', { start: 0, end: 1 }), // 2x1 grid
@@ -366,11 +369,11 @@
        this.input.keyboard.on('keydown-D', this.toggleDebugDisplay, this);
        // Add listener for 's' key (lowercase) to speed up
        this.input.keyboard.on('keydown-S', (event) => {
-            if (event.shiftKey) { // Check if Shift is held for uppercase 'S'
-                this.changeTimeScale(0.5); // Slow down
-            } else {
-                this.changeTimeScale(2); // Speed up (lowercase 's')
-            }
+           if (event.shiftKey) { // Check if Shift is held for uppercase 'S'
+               this.changeTimeScale(0.5); // Slow down
+           } else {
+               this.changeTimeScale(2); // Speed up (lowercase 's')
+           }
        });
 
 
@@ -391,8 +394,8 @@
                 }
             }, { once: true });
        } else {
-            console.warn("Start overlay not found!");
-            this.startGameLogic(); // Attempt to start anyway if overlay missing
+           console.warn("Start overlay not found!");
+           this.startGameLogic(); // Attempt to start anyway if overlay missing
        }
     }
 
@@ -879,13 +882,11 @@
 
         // --- Sound Stop Logic ---
         if (this.chopSound && this.chopSound.isPlaying && wasCutting) {
-            // Check if the *other* worker is still cutting OR building OR ATTACKING
+            // Check if the *other* worker is still cutting OR building
             let otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
-            let otherBusySound = otherWorker && (otherWorker.isCutting || otherWorker.isBuilding);
-            // Check if *any* spearman is attacking
-            let spearmanAttacking = this.playerSpearmen.some(s => s.isAttacking) || this.aiSpearmen.some(s => s.isAttacking);
+            let otherBusySound = otherWorker && otherWorker.active && (otherWorker.isCutting || otherWorker.isBuilding); // Check active state
 
-            if (!otherBusySound && !spearmanAttacking) { // Stop only if no other unit is making the sound
+            if (!otherBusySound) { // Stop only if the other worker isn't making the sound
                 this.chopSound.stop();
             }
         }
@@ -927,15 +928,15 @@
 
              // Destroy health bar only if the other worker isn't also cutting it
              let otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
-             if (!otherWorker || !otherWorker.isCutting || otherWorker.cuttingTarget !== treeToStopCutting) {
-                   this.destroyTreeHealthBar(treeToStopCutting);
+             if (!otherWorker || !otherWorker.active || !otherWorker.isCutting || otherWorker.cuttingTarget !== treeToStopCutting) { // Check active state
+                 this.destroyTreeHealthBar(treeToStopCutting);
              }
 
         } else if (treeToStopCutting) {
              // If not cutting or tree invalid, still try to clean up bar if needed
              let otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
-             if (!otherWorker || !otherWorker.isCutting || otherWorker.cuttingTarget !== treeToStopCutting) {
-                   this.destroyTreeHealthBar(treeToStopCutting);
+             if (!otherWorker || !otherWorker.active || !otherWorker.isCutting || otherWorker.cuttingTarget !== treeToStopCutting) { // Check active state
+                 this.destroyTreeHealthBar(treeToStopCutting);
              }
         }
       }
@@ -1052,10 +1053,10 @@
         this.logDebug(`Game Over: ${message}`); // Use new log function
 
         this.add.text(this.sys.game.config.width / 2, this.sys.game.config.height / 2,
-                                   message,
-                                   { font: '48px Arial', fill: color, align: 'center' })
-                                   .setOrigin(0.5)
-                                   .setDepth(2000); // Ensure message is on top
+                                         message,
+                                         { font: '48px Arial', fill: color, align: 'center' })
+                                         .setOrigin(0.5)
+                                         .setDepth(2000); // Ensure message is on top
 
         // Stop everything
         this.input.enabled = false; // Disable input on game over
@@ -1064,6 +1065,7 @@
         // Stop sounds
         if (this.workerWalkSound && this.workerWalkSound.isPlaying) this.workerWalkSound.stop();
         if (this.chopSound && this.chopSound.isPlaying) this.chopSound.stop();
+        if (this.spearmanAttackSound && this.spearmanAttackSound.isPlaying) this.spearmanAttackSound.stop(); // Stop attack sound
         // this.sound.stopAll(); // Use with caution if other sounds exist
 
         // Stop timers and reset workers visually/state-wise
@@ -1153,9 +1155,9 @@
     }
 
      /**
-      * Destroys the health bar associated with any unit/building.
-      */
-     destroyHealthBar(unit) {
+       * Destroys the health bar associated with any unit/building.
+       */
+      destroyHealthBar(unit) {
         if (unit) {
             if (unit.healthBarBg) {
                 unit.healthBarBg.destroy();
@@ -1166,13 +1168,13 @@
                 unit.healthBarFill = null;
             }
         }
-     }
+      }
 
      /**
-      * Creates a training progress text bubble for a barrack.
-      * @param {Phaser.GameObjects.Sprite} barrack - The barrack to add the text to.
-      */
-     createTrainingText(barrack) {
+       * Creates a training progress text bubble for a barrack.
+       * @param {Phaser.GameObjects.Sprite} barrack - The barrack to add the text to.
+       */
+      createTrainingText(barrack) {
         if (!barrack || !barrack.active || barrack.trainingText) return; // Added active check
 
         this.logDebug("Creating training text..."); // Debug log
@@ -1188,13 +1190,13 @@
         // Initial update will set position and text
         this.updateTrainingText(barrack);
         this.logDebug("Training text created."); // Debug log
-     }
+      }
 
      /**
-      * Updates the position and content of a barrack's training text bubble.
-      * @param {Phaser.GameObjects.Sprite} barrack - The barrack whose text to update.
-      */
-     updateTrainingText(barrack) {
+       * Updates the position and content of a barrack's training text bubble.
+       * @param {Phaser.GameObjects.Sprite} barrack - The barrack whose text to update.
+       */
+      updateTrainingText(barrack) {
         // Check if the text object exists and training is active before proceeding
         if (!barrack || !barrack.active || !barrack.isTraining || !barrack.trainingText || !barrack.trainingText.active) { // Added active check for text
              this.destroyTrainingText(barrack); // Clean up if invalid state
@@ -1223,19 +1225,19 @@
 
         // Update depth relative to barrack - ensure it stays on top (handled in main update)
         // text.setDepth(barrack.depth + 10);
-     }
+      }
 
      /**
-      * Destroys the training text bubble associated with a barrack.
-      * @param {Phaser.GameObjects.Sprite} barrack - The barrack whose text to destroy.
-      */
-     destroyTrainingText(barrack) {
+       * Destroys the training text bubble associated with a barrack.
+       * @param {Phaser.GameObjects.Sprite} barrack - The barrack whose text to destroy.
+       */
+      destroyTrainingText(barrack) {
         if (barrack && barrack.trainingText && barrack.trainingText.active) { // Added active check
             // this.logDebug("Destroying training text."); // Debug log - can be spammy
             barrack.trainingText.destroy();
             barrack.trainingText = null;
         }
-     }
+      }
 
 
     /**
@@ -1319,12 +1321,12 @@
              // Stop walk sound if needed
              if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
                  let otherWorker = workerId === 'Player' ? this.aiWorker : this.worker;
-                 if (!otherWorker || !otherWorker.moving) {
+                 if (!otherWorker || !otherWorker.active || !otherWorker.moving) { // Check active state
                       this.workerWalkSound.stop();
                  }
             }
          }
-          // Clear any potential targets
+         // Clear any potential targets
          workerSprite.target = null; // Clear previous move/build target
          workerSprite.cuttingTarget = null;
          workerSprite.buildingTarget = null;
@@ -1363,7 +1365,7 @@
         if (this.workerWalkSound && !this.workerWalkSound.isPlaying) {
              // Check if the other worker is also moving
              let otherWorker = workerId === 'Player' ? this.aiWorker : this.worker;
-             if (!otherWorker || !otherWorker.moving) { // Start only if other isn't moving
+             if (!otherWorker || !otherWorker.active || !otherWorker.moving) { // Start only if other isn't moving (and active)
                   this.workerWalkSound.play({ loop: true });
              }
         }
@@ -1401,7 +1403,9 @@
                  // Stop walk sound if needed
                  if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
                      let otherWorker = workerId === 'Player' ? this.aiWorker : this.worker;
-                     if (!otherWorker || !otherWorker.moving) this.workerWalkSound.stop();
+                     if (!otherWorker || !otherWorker.active || !otherWorker.moving) { // Check active state
+                        this.workerWalkSound.stop();
+                     }
                  }
                  return;
              }
@@ -1412,7 +1416,7 @@
             // --- Sound Stop Logic on Arrival ---
             if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
                 let otherWorker = workerId === 'Player' ? this.aiWorker : this.worker;
-                if (!otherWorker || !otherWorker.moving) { // Stop only if other worker isn't moving
+                if (!otherWorker || !otherWorker.active || !otherWorker.moving) { // Stop only if other worker isn't moving (and active)
                      this.workerWalkSound.stop();
                 }
             }
@@ -1450,10 +1454,9 @@
 
             // --- Chop Sound Start Logic ---
              if (this.chopSound && !this.chopSound.isPlaying) {
-                 // Check if other worker is also chopping/building or spearman attacking
-                 let otherWorkerBusy = otherWorker && otherWorker.active && (otherWorker.isCutting || otherWorker.isBuilding);
-                 let spearmanAttacking = this.playerSpearmen.some(s => s.active && s.isAttacking) || this.aiSpearmen.some(s => s.active && s.isAttacking);
-                 if (!otherWorkerBusy && !spearmanAttacking) { // Start only if no one else is making the sound
+                 // Check if other worker is also chopping/building
+                 let otherWorkerBusy = otherWorker && otherWorker.active && (otherWorker.isCutting || otherWorker.isBuilding); // Check active state
+                 if (!otherWorkerBusy) { // Start only if no one else is making the sound
                       this.chopSound.play({ loop: true });
                  }
              }
@@ -1483,34 +1486,34 @@
              } else if (workerSprite.state === 'moving_to_idle'){
                  // If it was moving to idle and stopped, just become idle
                  workerSprite.state = 'idle';
-                  this.logDebug(`${workerId} worker move interrupted, going idle.`);
+                 this.logDebug(`${workerId} worker move interrupted, going idle.`);
              } // If state was already changed (e.g., by background click), don't override
 
-            // Reset visuals only if it was actually moving
-            if(wasMoving) {
+             // Reset visuals only if it was actually moving
+             if(wasMoving) {
                  workerSprite.setTexture('worker_sheet');
                  workerSprite.anims.stop();
                  workerSprite.setFrame(0);
                  workerSprite.setFlipX(false); // Reset flip to default (facing right)
-            }
+             }
 
              // Stop walk sound if needed
-            if (this.workerWalkSound && this.workerWalkSound.isPlaying && wasMoving) {
-                let otherWorker = workerId === 'Player' ? this.aiWorker : this.worker;
-                if (!otherWorker || !otherWorker.moving) { // Stop only if other worker isn't moving
-                     this.workerWalkSound.stop();
-                }
-            }
+             if (this.workerWalkSound && this.workerWalkSound.isPlaying && wasMoving) {
+                 let otherWorker = workerId === 'Player' ? this.aiWorker : this.worker;
+                 if (!otherWorker || !otherWorker.active || !otherWorker.moving) { // Check active state
+                      this.workerWalkSound.stop();
+                 }
+             }
           }
         });
     }
 
      /**
-      * Starts the process of building a barrack for a specific side.
-      * @param {Phaser.GameObjects.Sprite} workerSprite - The worker doing the building.
-      * @param {string} side - 'player' or 'ai'.
-      */
-     startBuildingBarrack(workerSprite, side = 'player') {
+       * Starts the process of building a barrack for a specific side.
+       * @param {Phaser.GameObjects.Sprite} workerSprite - The worker doing the building.
+       * @param {string} side - 'player' or 'ai'.
+       */
+      startBuildingBarrack(workerSprite, side = 'player') {
        const isPlayer = side === 'player';
        const woodCount = isPlayer ? this.wood : this.aiWood;
        const existingBarrack = isPlayer ? this.playerBarrack : this.aiBarrack;
@@ -1552,7 +1555,9 @@
            workerSprite.setFlipX(false);
             if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
                 let otherWorker = isPlayer ? this.aiWorker : this.worker;
-                if (!otherWorker || !otherWorker.moving) this.workerWalkSound.stop();
+                if (!otherWorker || !otherWorker.active || !otherWorker.moving) { // Check active state
+                    this.workerWalkSound.stop();
+                }
             }
        }
        workerSprite.cuttingTarget = null;
@@ -1613,7 +1618,7 @@
 
         if (this.workerWalkSound && !this.workerWalkSound.isPlaying) {
             let otherWorker = isPlayer ? this.aiWorker : this.worker;
-            if (!otherWorker || !otherWorker.moving) {
+            if (!otherWorker || !otherWorker.active || !otherWorker.moving) { // Check active state
                  this.workerWalkSound.play({ loop: true });
             }
         }
@@ -1627,7 +1632,7 @@
            onComplete: () => {
                // Check if worker and target barrack are still valid and state is correct
                if (!workerSprite.active || workerSprite.state !== 'moving_to_build' || !workerSprite.target || !workerSprite.target.active) {
-                    if(workerSprite.active && workerSprite.state === 'moving_to_build') {
+                   if(workerSprite.active && workerSprite.state === 'moving_to_build') {
                         this.logDebug(`${side} worker reached build site, but target invalid or state changed.`);
                         workerSprite.state = 'idle'; // Go idle
                         workerSprite.setTexture('worker_sheet');
@@ -1642,21 +1647,25 @@
                              // Ensure build flag is reset if barrack was already destroyed
                              if(isPlayer) this.playerBarrackBuilding = false; else this.aiBarrackBuilding = false;
                         }
-                    }
-                    workerSprite.moving = false;
-                    workerSprite.target = null;
-                    // Stop walk sound if needed
-                    if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
-                        let otherWorker = isPlayer ? this.aiWorker : this.worker;
-                        if (!otherWorker || !otherWorker.moving) this.workerWalkSound.stop();
-                    }
-                    return;
+                   }
+                   workerSprite.moving = false;
+                   workerSprite.target = null;
+                   // Stop walk sound if needed
+                   if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
+                       let otherWorker = isPlayer ? this.aiWorker : this.worker;
+                       if (!otherWorker || !otherWorker.active || !otherWorker.moving) { // Check active state
+                        this.workerWalkSound.stop();
+                       }
+                   }
+                   return;
                }
 
                workerSprite.moving = false;
                 if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
                     let otherWorker = isPlayer ? this.aiWorker : this.worker;
-                    if (!otherWorker || !otherWorker.moving) this.workerWalkSound.stop();
+                    if (!otherWorker || !otherWorker.active || !otherWorker.moving) { // Check active state
+                        this.workerWalkSound.stop();
+                    }
                }
 
                // --- Start Building ---
@@ -1673,11 +1682,10 @@
 
                // Start building sound (using chop sound)
                if (this.chopSound && !this.chopSound.isPlaying) {
-                   // Check if other worker is also chopping/building or spearman attacking
+                   // Check if other worker is also chopping/building
                    let otherWorker = isPlayer ? this.aiWorker : this.worker;
-                   let otherWorkerBusy = otherWorker && otherWorker.active && (otherWorker.isCutting || otherWorker.isBuilding);
-                   let spearmanAttacking = this.playerSpearmen.some(s => s.active && s.isAttacking) || this.aiSpearmen.some(s => s.active && s.isAttacking);
-                   if (!otherWorkerBusy && !spearmanAttacking) { // Start only if no one else is making the sound
+                   let otherWorkerBusy = otherWorker && otherWorker.active && (otherWorker.isCutting || otherWorker.isBuilding); // Check active state
+                   if (!otherWorkerBusy) { // Start only if no one else is making the sound
                         this.chopSound.play({ loop: true });
                    }
                }
@@ -1720,12 +1728,14 @@
 
                 if (this.workerWalkSound && this.workerWalkSound.isPlaying && wasMoving) {
                     let otherWorker = isPlayer ? this.aiWorker : this.worker;
-                    if (!otherWorker || !otherWorker.moving) this.workerWalkSound.stop();
+                    if (!otherWorker || !otherWorker.active || !otherWorker.moving) { // Check active state
+                        this.workerWalkSound.stop();
+                    }
                 }
 
            }
        });
-     }
+      }
 
     /**
      * Cancels the building process, destroys the placeholder, refunds wood.
@@ -1760,10 +1770,10 @@
 
 
      /**
-      * Increases health of the structure being built. Called by timer.
-      * @param {Phaser.GameObjects.Sprite} workerSprite - The worker doing the building.
-      */
-     buildStructure(workerSprite) {
+       * Increases health of the structure being built. Called by timer.
+       * @param {Phaser.GameObjects.Sprite} workerSprite - The worker doing the building.
+       */
+      buildStructure(workerSprite) {
        // Check worker validity and building state
        if (this.gameOver || !workerSprite || !workerSprite.active || !workerSprite.isBuilding || !workerSprite.buildingTarget || !workerSprite.buildingTarget.active) {
             this.stopBuilding(workerSprite); // Stop if state is invalid
@@ -1807,13 +1817,13 @@
             // Set worker back to finding trees (or idle if none)
             workerSprite.state = 'chopping';
        }
-     }
+      }
 
       /**
-      * Stops the current building process for a specific worker.
-      * @param {Phaser.GameObjects.Sprite} workerSprite - The worker to stop.
-      */
-     stopBuilding(workerSprite) {
+       * Stops the current building process for a specific worker.
+       * @param {Phaser.GameObjects.Sprite} workerSprite - The worker to stop.
+       */
+      stopBuilding(workerSprite) {
        if (!workerSprite || !workerSprite.isBuilding) return;
 
        const side = workerSprite.getData('isPlayer') ? 'Player' : 'AI';
@@ -1825,13 +1835,12 @@
            workerSprite.buildingTimer = null;
        }
 
-       // Stop building sound (chop sound) only if no one else is chopping/building/attacking
+       // Stop building sound (chop sound) only if the other worker isn't chopping/building
        if (this.chopSound && this.chopSound.isPlaying) {
-           const playerWorkerBusy = this.worker && this.worker.active && (this.worker.isCutting || (this.worker.isBuilding && this.worker !== workerSprite));
-           const aiWorkerBusy = this.aiWorker && this.aiWorker.active && (this.aiWorker.isCutting || (this.aiWorker.isBuilding && this.aiWorker !== workerSprite));
-           const spearmanAttacking = this.playerSpearmen.some(s => s.active && s.isAttacking) || this.aiSpearmen.some(s => s.active && s.isAttacking);
+           const otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
+           const otherWorkerBusy = otherWorker && otherWorker.active && (otherWorker.isCutting || otherWorker.isBuilding); // Check active state
 
-           if (!playerWorkerBusy && !aiWorkerBusy && !spearmanAttacking) { // Stop if no one else is making the sound
+           if (!otherWorkerBusy) { // Stop if the other worker isn't making the sound
                 this.chopSound.stop();
            }
        }
@@ -1845,7 +1854,7 @@
        workerSprite.setFrame(0);
        workerSprite.setFlipX(false);
        // Don't reset state here, let the calling function decide the next state (e.g., 'chopping' or 'idle')
-     }
+      }
 
 
     /**
@@ -2107,11 +2116,11 @@
     }
 
      /**
-     * Sends a spearman to move within attack range of a target.
-     * @param {Phaser.GameObjects.Sprite} spearman - The spearman to send.
-     * @param {Phaser.GameObjects.Sprite | Phaser.GameObjects.Image} target - The target enemy.
-     */
-     sendSpearmanToAttack(spearman, target) {
+      * Sends a spearman to move within attack range of a target.
+      * @param {Phaser.GameObjects.Sprite} spearman - The spearman to send.
+      * @param {Phaser.GameObjects.Sprite | Phaser.GameObjects.Image} target - The target enemy.
+      */
+      sendSpearmanToAttack(spearman, target) {
         if (!spearman || !spearman.active || !target || !target.active || this.gameOver) {
             if(spearman && spearman.active) spearman.state = 'idle'; // Reset state if target invalid
             return;
@@ -2160,7 +2169,7 @@
              // Check other spearmen moving (excluding self)
              let otherSpearmanMoving = this.playerSpearmen.some(s => s.active && s !== spearman && s.moving) || this.aiSpearmen.some(s => s.active && s !== spearman && s.moving);
              if (!playerWorkerMoving && !aiWorkerMoving && !otherSpearmanMoving) {
-                   this.workerWalkSound.play({ loop: true });
+                  this.workerWalkSound.play({ loop: true });
              }
          }
 
@@ -2247,14 +2256,14 @@
                  }
             }
         });
-     }
+      }
 
      /**
-      * Starts the attack sequence for a spearman.
-      * @param {Phaser.GameObjects.Sprite} spearman - The attacking spearman.
-      * @param {Phaser.GameObjects.Sprite | Phaser.GameObjects.Image} target - The target being attacked.
-      */
-     startAttacking(spearman, target) {
+       * Starts the attack sequence for a spearman.
+       * @param {Phaser.GameObjects.Sprite} spearman - The attacking spearman.
+       * @param {Phaser.GameObjects.Sprite | Phaser.GameObjects.Image} target - The target being attacked.
+       */
+      startAttacking(spearman, target) {
         if (!spearman || !spearman.active || !target || !target.active || spearman.isAttacking || this.gameOver) {
             return;
         }
@@ -2274,16 +2283,10 @@
         spearman.setTexture('spearman_attack_sheet');
         spearman.anims.play('spearman_attack', true);
 
-        // Start attack sound (chop sound) if needed
-        if (this.chopSound && !this.chopSound.isPlaying) {
-             // Check if other units are busy
-             let playerWorkerBusy = this.worker && this.worker.active && (this.worker.isCutting || this.worker.isBuilding);
-             let aiWorkerBusy = this.aiWorker && this.aiWorker.active && (this.aiWorker.isCutting || this.aiWorker.isBuilding);
-             let otherSpearmanAttacking = this.playerSpearmen.some(s => s.active && s !== spearman && s.isAttacking) || this.aiSpearmen.some(s => s.active && s !== spearman && s.isAttacking);
-             if (!playerWorkerBusy && !aiWorkerBusy && !otherSpearmanAttacking) {
-                   this.chopSound.play({ loop: true });
-             }
-         }
+        // Start attack sound
+        if (this.spearmanAttackSound && !this.spearmanAttackSound.isPlaying) {
+             this.spearmanAttackSound.play({ loop: true });
+        }
 
         // Start attack timer
         spearman.attackTimer = this.time.addEvent({
@@ -2292,7 +2295,7 @@
             callbackScope: this,
             loop: true
         });
-     }
+      }
 
     /**
      * Stops the attack sequence for a spearman.
@@ -2313,15 +2316,10 @@
         spearman.isAttacking = false;
         spearman.attackTarget = null; // Clear target
 
-        // Stop attack sound if needed (check other units)
-        if (this.chopSound && this.chopSound.isPlaying) {
-             let playerWorkerBusy = this.worker && this.worker.active && (this.worker.isCutting || this.worker.isBuilding);
-             let aiWorkerBusy = this.aiWorker && this.aiWorker.active && (this.aiWorker.isCutting || this.aiWorker.isBuilding);
-             let otherSpearmanAttacking = this.playerSpearmen.some(s => s.active && s !== spearman && s.isAttacking) || this.aiSpearmen.some(s => s.active && s !== spearman && s.isAttacking);
-             if (!playerWorkerBusy && !aiWorkerBusy && !otherSpearmanAttacking) {
-                   this.chopSound.stop();
-             }
-         }
+        // Stop attack sound
+        if (this.spearmanAttackSound && this.spearmanAttackSound.isPlaying) {
+             this.spearmanAttackSound.stop();
+        }
 
         // Reset visuals (only if still active)
         if (spearman.active) {
