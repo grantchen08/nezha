@@ -81,6 +81,7 @@
       this.chopSound = null; // Sound effect for chopping / building
       this.spearmanAttackSound = null; // Sound effect for spearman attacking
       this.unitDieSound = null; // Sound effect for unit death
+      this.buildingFallSound = null; // Sound effect for building destruction
       this.gameStarted = false; // Flag to prevent logic running before start
       this.gameOver = false; // Flag to prevent multiple end game calls
       this.selectedWorker = null; // Keep track of the selected worker
@@ -159,6 +160,9 @@
       this.load.audio('spearman_attack_sound', 'https://grantchen08.github.io/nezha/attack.mp3');
       // Load the unit death sound effect
       this.load.audio('unit_die_sound', 'https://grantchen08.github.io/nezha/hurt.mp3');
+      // Load the building destruction sound effect
+      this.load.audio('building_fall_sound', 'https://grantchen08.github.io/nezha/fall.mp3');
+
 
       // Basic error handling for asset loading
       this.load.on('loaderror', (file) => {
@@ -212,9 +216,18 @@
                 this.health = 0;
                 this.scene.logDebug(`${this.getData('unitType') || 'Object'} destroyed!`);
 
-                // Play death sound
-                if (this.scene.unitDieSound) {
-                    this.scene.unitDieSound.play();
+                // Play appropriate death sound
+                const unitType = this.getData('unitType');
+                if (unitType === 'house' || unitType === 'barrack') {
+                    // Play building fall sound
+                    if (this.scene.buildingFallSound) {
+                        this.scene.buildingFallSound.play();
+                    }
+                } else {
+                    // Play unit die sound for workers/spearmen
+                    if (this.scene.unitDieSound) {
+                        this.scene.unitDieSound.play();
+                    }
                 }
 
                 // Stop attacker if this was their target
@@ -317,6 +330,7 @@
       this.chopSound = this.sound.add('chop_sound'); // For chopping and building
       this.spearmanAttackSound = this.sound.add('spearman_attack_sound'); // For attacking
       this.unitDieSound = this.sound.add('unit_die_sound'); // For unit death
+      this.buildingFallSound = this.sound.add('building_fall_sound'); // For building destruction
 
       // Create animations (shared)
       this.anims.create({
