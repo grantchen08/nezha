@@ -54,6 +54,9 @@
   const FOG_CELL_SIZE = 64; // Size of fog of war grid cells
   const FOG_COLOR = 0x000000; // Black fog
   const FOG_ALPHA = 0.75; // Semi-transparent fog
+  const DAMAGE_TEXT_STYLE = { font: 'bold 16px Arial', fill: '#ff0000', stroke: '#000000', strokeThickness: 3 }; // Style for damage text
+  const DAMAGE_TEXT_DURATION = 1200; // Milliseconds for damage text animation
+  const DAMAGE_TEXT_Y_RISE = -60; // Pixels damage text rises
 
 
   /**
@@ -191,11 +194,38 @@
       // --- End Fog of War Init ---
 
 
-      // --- Add takeDamage method to prototypes --- (Unchanged)
-      const takeDamage = function(amount, attacker) { /* ... same as before ... */
+      // --- Add takeDamage method to prototypes ---
+      const takeDamage = function(amount, attacker) {
             if (!this.active || this.health <= 0) return; // Already dead or inactive
+
             this.health -= amount;
             this.scene.updateHealthBar(this); // Update visual
+
+            // --- Show Damage Text ---
+            if (amount > 0 && this.scene) { // Only show if actual damage and scene exists
+                const textX = this.x;
+                // Position slightly above the health bar (if exists) or the unit top
+                const yOffset = (this.healthBarBg ? this.healthBarBg.y - HEALTH_BAR_HEIGHT / 2 : this.y - (this.displayHeight || this.height)) - 10;
+                const damageText = this.scene.add.text(textX, yOffset, `-${amount}`, DAMAGE_TEXT_STYLE)
+                    .setOrigin(0.5)
+                    .setDepth(5100); // Ensure damage text is above fog
+
+                // Animate the text rising and fading
+                this.scene.tweens.add({
+                    targets: damageText,
+                    y: damageText.y + DAMAGE_TEXT_Y_RISE, // Move up
+                    alpha: 0, // Fade out
+                    duration: DAMAGE_TEXT_DURATION,
+                    ease: 'Power1', // Simple ease out
+                    onComplete: () => {
+                        if (damageText.active) { // Check if text still exists before destroying
+                           damageText.destroy();
+                        }
+                    }
+                });
+            }
+            // --- End Show Damage Text ---
+
             if (this.health <= 0) {
                 this.health = 0;
                 this.scene.logDebug(`${this.getData('unitType') || 'Object'} destroyed!`);
@@ -323,13 +353,10 @@
        }
     }
 
-    // --- FOG OF WAR HELPER FUNCTIONS ---
+    // --- FOG OF WAR HELPER FUNCTIONS --- (Unchanged from previous version)
 
     /**
      * Converts world coordinates (like sprite x/y) to fog grid coordinates.
-     * @param {number} worldX - The world x-coordinate.
-     * @param {number} worldY - The world y-coordinate.
-     * @returns {{gridX: number, gridY: number}} The corresponding grid cell indices.
      */
     worldToGrid(worldX, worldY) {
         const gridX = Math.floor(worldX / FOG_CELL_SIZE);
@@ -339,62 +366,35 @@
 
     /**
      * Checks if a specific fog grid cell is revealed for a given perspective.
-     * @param {number} gridX - The grid x-index.
-     * @param {number} gridY - The grid y-index.
-     * @param {boolean} isPlayerView - True to check player's grid, false for AI's grid.
-     * @returns {boolean} True if the cell is revealed from that perspective, false otherwise.
      */
     isCellRevealed(gridX, gridY, isPlayerView) {
         const grid = isPlayerView ? this.playerFogGrid : this.aiFogGrid;
-        // Check bounds and grid existence
         if (grid && gridY >= 0 && gridY < this.gridHeight && gridX >= 0 && gridX < this.gridWidth) {
             return grid[gridY][gridX];
         }
-        return false; // Out of bounds or grid not initialized is not revealed
+        return false;
     }
 
     /**
      * Reveals a specific fog grid cell for a given perspective.
-     * Updates visuals only if it's the player's perspective.
-     * @param {number} gridX - The grid x-index.
-     * @param {number} gridY - The grid y-index.
-     * @param {boolean} isPlayerView - True to update player's grid and visuals, false to update only AI's grid.
      */
     revealCell(gridX, gridY, isPlayerView) {
-        // Check bounds first
-        if (gridY < 0 || gridY >= this.gridHeight || gridX < 0 || gridX >= this.gridWidth) {
-            return;
-        }
-
+        if (gridY < 0 || gridY >= this.gridHeight || gridX < 0 || gridX >= this.gridWidth) return;
         const targetGrid = isPlayerView ? this.playerFogGrid : this.aiFogGrid;
-
-        // If already revealed in the target grid, do nothing
         if (targetGrid[gridY][gridX]) return;
-
-        // Mark as revealed in the appropriate data grid
         targetGrid[gridY][gridX] = true;
-
-        // Update visuals ONLY for the player
-        if (isPlayerView) {
-            if (this.fogRects[gridY][gridX]) {
-                this.fogRects[gridY][gridX].setVisible(false);
-            }
+        if (isPlayerView && this.fogRects[gridY][gridX]) {
+            this.fogRects[gridY][gridX].setVisible(false);
         }
     }
 
-
     /**
-     * Updates fog visibility around a given game object based on its bounds,
-     * revealing cells for the appropriate player (player or AI).
-     * @param {Phaser.GameObjects.Sprite | Phaser.GameObjects.Image} gameObject - The object providing visibility.
+     * Updates fog visibility around a given game object based on its bounds.
      */
     updateVisibilityAround(gameObject) {
         if (!gameObject || !gameObject.active) return;
-
-        const isPlayerUnit = gameObject.getData('isPlayer'); // Determine perspective
+        const isPlayerUnit = gameObject.getData('isPlayer');
         let bounds;
-
-        // Get bounds differently for Sprites vs Images
         if (typeof gameObject.getBounds === 'function') {
             bounds = gameObject.getBounds();
         } else {
@@ -406,15 +406,10 @@
             const topLeftY = gameObject.y - height * originYFactor;
             bounds = new Phaser.Geom.Rectangle(topLeftX, topLeftY, width, height);
         }
-
-        // Convert world bounds corners to grid coordinates
         const topLeftGrid = this.worldToGrid(bounds.x, bounds.y);
         const bottomRightGrid = this.worldToGrid(bounds.right, bounds.bottom);
-
-        // Iterate through all grid cells covered by the bounds
         for (let gx = topLeftGrid.gridX; gx <= bottomRightGrid.gridX; gx++) {
             for (let gy = topLeftGrid.gridY; gy <= bottomRightGrid.gridY; gy++) {
-                // Reveal the cell for the correct perspective
                 this.revealCell(gx, gy, isPlayerUnit);
             }
         }
@@ -423,24 +418,18 @@
 
     /**
      * Finds the grid coordinates of the nearest hidden fog cell for a specific perspective.
-     * @param {Phaser.GameObjects.Sprite} unit - The unit searching.
-     * @param {boolean} isPlayerView - True to search player's grid, false for AI's grid.
-     * @returns {{gridX: number, gridY: number} | null} Coordinates of the nearest hidden cell, or null if all are revealed.
      */
     findNearestHiddenCell(unit, isPlayerView) {
         const grid = isPlayerView ? this.playerFogGrid : this.aiFogGrid;
-        if (!grid) return null; // Grid not initialized
-
+        if (!grid) return null;
         let nearestCell = null;
         let minDistanceSq = Infinity;
-
         for (let y = 0; y < this.gridHeight; y++) {
             for (let x = 0; x < this.gridWidth; x++) {
-                if (!grid[y][x]) { // If the cell is hidden in the specified grid
+                if (!grid[y][x]) {
                     const cellCenterX = x * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
                     const cellCenterY = y * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
                     const distanceSq = Phaser.Math.Distance.Squared(unit.x, unit.y, cellCenterX, cellCenterY);
-
                     if (distanceSq < minDistanceSq) {
                         minDistanceSq = distanceSq;
                         nearestCell = { gridX: x, gridY: y };
@@ -739,7 +728,7 @@
     endGame(message, color = '#ffffff') { /* ... same as before ... */
         if (this.gameOver) return; this.gameOver = true; this.gameStarted = false;
         this.logDebug(`Game Over: ${message}`);
-        this.add.text(this.sys.game.config.width / 2, this.sys.game.config.height / 2, message, { font: '48px Arial', fill: color, align: 'center' }).setOrigin(0.5).setDepth(2000);
+        this.add.text(this.sys.game.config.width / 2, this.sys.game.config.height / 2, message, { font: '48px Arial', fill: color, align: 'center' }).setOrigin(0.5).setDepth(6000); // Increased depth
         this.input.enabled = false; this.tweens.killAll();
         if (this.workerWalkSound && this.workerWalkSound.isPlaying) this.workerWalkSound.stop();
         if (this.chopSound && this.chopSound.isPlaying) this.chopSound.stop();
@@ -806,8 +795,6 @@
 
     /**
      * Finds the closest *visible* active tree to the specified worker, based on their perspective.
-     * @param {Phaser.GameObjects.Sprite} workerSprite - The worker to find the closest tree for.
-     * @returns {Phaser.GameObjects.Sprite | null} The closest visible tree or null.
      */
     findClosestTree(workerSprite) {
         if (!workerSprite || !this.trees) return null;
