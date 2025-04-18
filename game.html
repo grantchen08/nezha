@@ -54,8 +54,6 @@
   const FOG_CELL_SIZE = 64; // Size of fog of war grid cells
   const FOG_COLOR = 0x000000; // Black fog
   const FOG_ALPHA = 0.75; // Semi-transparent fog
-  // const RANDOM_MOVE_MAX_DIST = 150; // No longer needed for random moves
-  // const RANDOM_MOVE_MIN_DIST = 50; // No longer needed for random moves
 
 
   /**
@@ -96,7 +94,6 @@
 
       // Fog of War properties
       this.fogGrid = null; // 2D array holding visibility state (true=revealed, false=hidden)
-      this.fogLayer = null; // Graphics object to draw the fog
       this.gridWidth = 0; // Number of cells horizontally
       this.gridHeight = 0; // Number of cells vertically
       this.fogRects = null; // 2D array storing references to the fog rectangle graphics
@@ -167,8 +164,6 @@
       this.gridHeight = Math.ceil(gameHeight / FOG_CELL_SIZE);
       this.fogGrid = [];
       this.fogRects = []; // Store references to the graphics objects
-      // this.fogLayer = this.add.graphics(); // Graphics object for fog visuals - DEPRECATED
-      // this.fogLayer.setDepth(5000); // Ensure fog is drawn on top of game elements but below UI
 
       for (let y = 0; y < this.gridHeight; y++) {
           this.fogGrid[y] = [];
@@ -375,28 +370,47 @@
     }
 
     /**
-     * Updates fog visibility around a given game object.
-     * Reveals the cell(s) the object currently occupies.
-     * For simplicity, reveals only the cell containing the object's origin (x,y).
+     * Updates fog visibility around a given game object based on its bounds.
+     * Reveals all cells the object's bounding box overlaps.
      * @param {Phaser.GameObjects.Sprite | Phaser.GameObjects.Image} gameObject - The object providing visibility.
      */
     updateVisibilityAround(gameObject) {
         if (!gameObject || !gameObject.active) return;
 
-        // --- Simple version: Reveal only the cell containing the origin ---
-        const { gridX, gridY } = this.worldToGrid(gameObject.x, gameObject.y);
-        this.revealCell(gridX, gridY);
+        let bounds;
 
-        // --- Optional Advanced version: Reveal 3x3 area ---
-        /*
-        const { gridX, gridY } = this.worldToGrid(gameObject.x, gameObject.y);
-        for (let dx = -1; dx <= 1; dx++) {
-            for (let dy = -1; dy <= 1; dy++) {
-                this.revealCell(gridX + dx, gridY + dy);
+        // Get bounds differently for Sprites vs Images
+        if (typeof gameObject.getBounds === 'function') {
+            // Likely a Sprite
+            bounds = gameObject.getBounds();
+        } else {
+            // Likely an Image or object without getBounds - calculate manually
+            const width = gameObject.displayWidth || gameObject.width;
+            const height = gameObject.displayHeight || gameObject.height;
+            // Use nullish coalescing for origin defaults
+            const originXFactor = gameObject.originX ?? 0.5;
+            const originYFactor = gameObject.originY ?? 0.5;
+            const topLeftX = gameObject.x - width * originXFactor;
+            const topLeftY = gameObject.y - height * originYFactor;
+            const bottomRightX = topLeftX + width;
+            const bottomRightY = topLeftY + height;
+            bounds = new Phaser.Geom.Rectangle(topLeftX, topLeftY, width, height); // Use Phaser Rect for consistency
+        }
+
+
+        // Convert world bounds corners to grid coordinates
+        const topLeftGrid = this.worldToGrid(bounds.x, bounds.y);
+        // Use bounds.right and bounds.bottom which are calculated correctly by Phaser.Geom.Rectangle
+        const bottomRightGrid = this.worldToGrid(bounds.right, bounds.bottom);
+
+        // Iterate through all grid cells covered by the bounds
+        for (let gx = topLeftGrid.gridX; gx <= bottomRightGrid.gridX; gx++) {
+            for (let gy = topLeftGrid.gridY; gy <= bottomRightGrid.gridY; gy++) {
+                this.revealCell(gx, gy);
             }
         }
-        */
     }
+
 
     /**
      * Finds the grid coordinates of the nearest hidden fog cell to a unit.
@@ -550,31 +564,9 @@
                      if (this.workerWalkSound && this.workerWalkSound.isPlaying) { if (!this.aiWorker || !this.aiWorker.moving) this.workerWalkSound.stop(); }
                 }
                 workerToMove.cuttingTarget = null; workerToMove.buildingTarget = null; workerToMove.initialChopHealth = null;
-                workerToMove.state = 'moving_to_idle';
-                const distance = Phaser.Math.Distance.Between(workerToMove.x, workerToMove.y, targetX, targetY);
-                const speed = 100; const duration = (distance / speed) * 1000 || 1;
-                workerToMove.anims.play('worker_walk', true);
-                if (targetX < workerToMove.x) workerToMove.setFlipX(true); else workerToMove.setFlipX(false);
-                workerToMove.moving = true;
-                 if (this.workerWalkSound && !this.workerWalkSound.isPlaying) { if (!this.aiWorker || !this.aiWorker.moving) this.workerWalkSound.play({ loop: true }); }
-                this.tweens.add({
-                    targets: workerToMove, x: targetX, y: targetY, duration: duration, ease: 'Linear',
-                    onComplete: () => {
-                        if (!workerToMove.active || workerToMove.state !== 'moving_to_idle') return;
-                        workerToMove.moving = false; workerToMove.state = 'idle'; workerToMove.setTexture('worker_sheet');
-                        workerToMove.anims.stop('worker_walk'); workerToMove.setFrame(0); workerToMove.setFlipX(false);
-                        this.logDebug('Worker reached destination and is idle.');
-                        if (this.workerWalkSound && this.workerWalkSound.isPlaying) { if (!this.aiWorker || !this.aiWorker.moving) this.workerWalkSound.stop(); }
-                    },
-                    onStop: () => {
-                         if (!workerToMove.active) return; workerToMove.moving = false;
-                         if (workerToMove.state === 'moving_to_idle') {
-                             workerToMove.state = 'idle'; workerToMove.setTexture('worker_sheet'); workerToMove.anims.stop('worker_walk');
-                             workerToMove.setFrame(0); workerToMove.setFlipX(false); this.logDebug('Worker move interrupted, going idle.');
-                         }
-                         if (this.workerWalkSound && this.workerWalkSound.isPlaying) { if (!this.aiWorker || !this.aiWorker.moving) this.workerWalkSound.stop(); }
-                    }
-                });
+                // Use startUnitMove for player commands too
+                this.startUnitMove(workerToMove, targetX, targetY, 'moving_to_idle', 'idle');
+                // Deselect the worker visually and logically AFTER issuing the command
                 workerToMove.clearTint(); this.selectedWorker = null;
             } else {
                  this.logDebug('Clicked background (no player worker selected).');
@@ -1384,7 +1376,7 @@
         const allUnits = [this.worker, this.aiWorker, ...this.playerSpearmen, ...this.aiSpearmen];
         allUnits.forEach(unit => {
             if (unit && unit.active) {
-                this.updateVisibilityAround(unit);
+                this.updateVisibilityAround(unit); // Use the updated function
             }
         });
         // Buildings reveal once on creation/completion, no need to update FoW for them every frame
@@ -1448,4 +1440,3 @@
 </script>
 </body>
 </html>
-" from the Canv
