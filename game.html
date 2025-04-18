@@ -93,10 +93,11 @@
       this.maxDebugHistory = 10; // Max number of debug messages to keep
 
       // Fog of War properties
-      this.fogGrid = null; // 2D array holding visibility state (true=revealed, false=hidden)
-      this.gridWidth = 0; // Number of cells horizontally
-      this.gridHeight = 0; // Number of cells vertically
-      this.fogRects = null; // 2D array storing references to the fog rectangle graphics
+      this.playerFogGrid = null; // Player's visibility data
+      this.aiFogGrid = null;     // AI's visibility data
+      this.gridWidth = 0;        // Number of cells horizontally
+      this.gridHeight = 0;       // Number of cells vertically
+      this.fogRects = null;      // 2D array storing references to the player's visual fog rectangles
     }
 
     /**
@@ -162,15 +163,19 @@
       // --- Initialize Fog of War ---
       this.gridWidth = Math.ceil(gameWidth / FOG_CELL_SIZE);
       this.gridHeight = Math.ceil(gameHeight / FOG_CELL_SIZE);
-      this.fogGrid = [];
-      this.fogRects = []; // Store references to the graphics objects
+      this.playerFogGrid = [];
+      this.aiFogGrid = [];
+      this.fogRects = []; // Store references ONLY for the player's visual fog
 
       for (let y = 0; y < this.gridHeight; y++) {
-          this.fogGrid[y] = [];
+          this.playerFogGrid[y] = [];
+          this.aiFogGrid[y] = [];
           this.fogRects[y] = [];
           for (let x = 0; x < this.gridWidth; x++) {
-              this.fogGrid[y][x] = false; // Initially hidden
-              // Create individual rectangle for each fog cell
+              this.playerFogGrid[y][x] = false; // Player initially hidden
+              this.aiFogGrid[y][x] = false;     // AI initially hidden
+
+              // Create visual rectangle ONLY for the player's view
               const fogRect = this.add.rectangle(
                   x * FOG_CELL_SIZE,
                   y * FOG_CELL_SIZE,
@@ -178,11 +183,11 @@
                   FOG_CELL_SIZE,
                   FOG_COLOR,
                   FOG_ALPHA
-              ).setOrigin(0, 0).setDepth(5000); // Add rect directly to scene, depth managed here
+              ).setOrigin(0, 0).setDepth(5000); // High depth
               this.fogRects[y][x] = fogRect; // Store reference
           }
       }
-      this.logDebug(`Fog grid initialized (${this.gridWidth}x${this.gridHeight})`);
+      this.logDebug(`Fog grids initialized (${this.gridWidth}x${this.gridHeight})`);
       // --- End Fog of War Init ---
 
 
@@ -229,20 +234,20 @@
       Phaser.GameObjects.Image.prototype.takeDamage = takeDamage;
 
 
-      // --- Player & AI House Setup --- (Unchanged, except for initial FoW reveal)
+      // --- Player & AI House Setup --- (Reveal FoW for respective sides)
       this.house = this.add.image(100, gameHeight - 100, 'house').setOrigin(0.5, 1);
       this.house.health = HOUSE_HEALTH; this.house.maxHealth = HOUSE_HEALTH;
       this.house.setData('unitType', 'house'); this.house.setData('isPlayer', true);
       this.createHealthBar(this.house, BUILDING_HEALTH_BAR_WIDTH, PLAYER_HEALTH_BAR_COLOR);
-      this.updateVisibilityAround(this.house); // Reveal initial FoW
+      this.updateVisibilityAround(this.house); // Reveal for player
 
       this.aiHouse = this.add.image(gameWidth - 100, gameHeight - 100, 'house').setOrigin(0.5, 1);
       this.aiHouse.health = HOUSE_HEALTH; this.aiHouse.maxHealth = HOUSE_HEALTH;
       this.aiHouse.setData('unitType', 'house'); this.aiHouse.setData('isPlayer', false);
       this.createHealthBar(this.aiHouse, BUILDING_HEALTH_BAR_WIDTH, AI_HEALTH_BAR_COLOR);
-      this.updateVisibilityAround(this.aiHouse); // Reveal initial FoW
+      this.updateVisibilityAround(this.aiHouse); // Reveal for AI
 
-      // --- Player & AI Worker Setup --- (Unchanged, except for initial FoW reveal)
+      // --- Player & AI Worker Setup --- (Reveal FoW for respective sides)
       this.worker = this.add.sprite(150, gameHeight - 150, 'worker_sheet').setOrigin(0.5, 1);
       this.worker.setFrame(0); this.worker.state = 'idle'; this.worker.moving = false; this.worker.target = null;
       this.worker.isCutting = false; this.worker.cuttingTarget = null; this.worker.cuttingTimer = null;
@@ -251,7 +256,7 @@
       this.worker.setData('unitType', 'worker'); this.worker.setData('isPlayer', true); this.worker.initialChopHealth = null;
       this.createHealthBar(this.worker, UNIT_HEALTH_BAR_WIDTH, PLAYER_HEALTH_BAR_COLOR);
       this.worker.setInteractive();
-      this.updateVisibilityAround(this.worker); // Reveal initial FoW
+      this.updateVisibilityAround(this.worker); // Reveal for player
 
       this.aiWorker = this.add.sprite(gameWidth - 150, gameHeight - 150, 'worker_sheet').setOrigin(0.5, 1);
       this.aiWorker.setFrame(0); this.aiWorker.state = 'idle'; this.aiWorker.moving = false; this.aiWorker.target = null;
@@ -260,7 +265,7 @@
       this.aiWorker.health = WORKER_HEALTH; this.aiWorker.maxHealth = WORKER_HEALTH;
       this.aiWorker.setData('unitType', 'worker'); this.aiWorker.setData('isPlayer', false); this.aiWorker.initialChopHealth = null;
       this.createHealthBar(this.aiWorker, UNIT_HEALTH_BAR_WIDTH, AI_HEALTH_BAR_COLOR);
-      this.updateVisibilityAround(this.aiWorker); // Reveal initial FoW
+      this.updateVisibilityAround(this.aiWorker); // Reveal for AI
 
 
       // Load sounds (Unchanged)
@@ -333,102 +338,107 @@
     }
 
     /**
-     * Checks if a specific fog grid cell is revealed.
+     * Checks if a specific fog grid cell is revealed for a given perspective.
      * @param {number} gridX - The grid x-index.
      * @param {number} gridY - The grid y-index.
-     * @returns {boolean} True if the cell is revealed, false otherwise.
+     * @param {boolean} isPlayerView - True to check player's grid, false for AI's grid.
+     * @returns {boolean} True if the cell is revealed from that perspective, false otherwise.
      */
-    isCellRevealed(gridX, gridY) {
-        // Check bounds
-        if (gridY >= 0 && gridY < this.gridHeight && gridX >= 0 && gridX < this.gridWidth) {
-            return this.fogGrid[gridY][gridX];
+    isCellRevealed(gridX, gridY, isPlayerView) {
+        const grid = isPlayerView ? this.playerFogGrid : this.aiFogGrid;
+        // Check bounds and grid existence
+        if (grid && gridY >= 0 && gridY < this.gridHeight && gridX >= 0 && gridX < this.gridWidth) {
+            return grid[gridY][gridX];
         }
-        return false; // Out of bounds is not revealed
+        return false; // Out of bounds or grid not initialized is not revealed
     }
 
     /**
-     * Reveals a specific fog grid cell.
+     * Reveals a specific fog grid cell for a given perspective.
+     * Updates visuals only if it's the player's perspective.
      * @param {number} gridX - The grid x-index.
      * @param {number} gridY - The grid y-index.
+     * @param {boolean} isPlayerView - True to update player's grid and visuals, false to update only AI's grid.
      */
-    revealCell(gridX, gridY) {
-        // Check bounds
-        if (gridY >= 0 && gridY < this.gridHeight && gridX >= 0 && gridX < this.gridWidth) {
-            // If already revealed, do nothing
-            if (this.fogGrid[gridY][gridX]) return;
+    revealCell(gridX, gridY, isPlayerView) {
+        // Check bounds first
+        if (gridY < 0 || gridY >= this.gridHeight || gridX < 0 || gridX >= this.gridWidth) {
+            return;
+        }
 
-            this.fogGrid[gridY][gridX] = true; // Mark as revealed in the data grid
+        const targetGrid = isPlayerView ? this.playerFogGrid : this.aiFogGrid;
 
-            // Make the corresponding fog rectangle invisible
+        // If already revealed in the target grid, do nothing
+        if (targetGrid[gridY][gridX]) return;
+
+        // Mark as revealed in the appropriate data grid
+        targetGrid[gridY][gridX] = true;
+
+        // Update visuals ONLY for the player
+        if (isPlayerView) {
             if (this.fogRects[gridY][gridX]) {
                 this.fogRects[gridY][gridX].setVisible(false);
-                // Optional: Destroy the rectangle for performance if it won't be hidden again
-                // this.fogRects[gridY][gridX].destroy();
-                // this.fogRects[gridY][gridX] = null;
             }
         }
     }
 
+
     /**
-     * Updates fog visibility around a given game object based on its bounds.
-     * Reveals all cells the object's bounding box overlaps.
+     * Updates fog visibility around a given game object based on its bounds,
+     * revealing cells for the appropriate player (player or AI).
      * @param {Phaser.GameObjects.Sprite | Phaser.GameObjects.Image} gameObject - The object providing visibility.
      */
     updateVisibilityAround(gameObject) {
         if (!gameObject || !gameObject.active) return;
 
+        const isPlayerUnit = gameObject.getData('isPlayer'); // Determine perspective
         let bounds;
 
         // Get bounds differently for Sprites vs Images
         if (typeof gameObject.getBounds === 'function') {
-            // Likely a Sprite
             bounds = gameObject.getBounds();
         } else {
-            // Likely an Image or object without getBounds - calculate manually
             const width = gameObject.displayWidth || gameObject.width;
             const height = gameObject.displayHeight || gameObject.height;
-            // Use nullish coalescing for origin defaults
             const originXFactor = gameObject.originX ?? 0.5;
             const originYFactor = gameObject.originY ?? 0.5;
             const topLeftX = gameObject.x - width * originXFactor;
             const topLeftY = gameObject.y - height * originYFactor;
-            const bottomRightX = topLeftX + width;
-            const bottomRightY = topLeftY + height;
-            bounds = new Phaser.Geom.Rectangle(topLeftX, topLeftY, width, height); // Use Phaser Rect for consistency
+            bounds = new Phaser.Geom.Rectangle(topLeftX, topLeftY, width, height);
         }
-
 
         // Convert world bounds corners to grid coordinates
         const topLeftGrid = this.worldToGrid(bounds.x, bounds.y);
-        // Use bounds.right and bounds.bottom which are calculated correctly by Phaser.Geom.Rectangle
         const bottomRightGrid = this.worldToGrid(bounds.right, bounds.bottom);
 
         // Iterate through all grid cells covered by the bounds
         for (let gx = topLeftGrid.gridX; gx <= bottomRightGrid.gridX; gx++) {
             for (let gy = topLeftGrid.gridY; gy <= bottomRightGrid.gridY; gy++) {
-                this.revealCell(gx, gy);
+                // Reveal the cell for the correct perspective
+                this.revealCell(gx, gy, isPlayerUnit);
             }
         }
     }
 
 
     /**
-     * Finds the grid coordinates of the nearest hidden fog cell to a unit.
-     * @param {Phaser.GameObjects.Sprite} unit - The unit searching for hidden cells.
+     * Finds the grid coordinates of the nearest hidden fog cell for a specific perspective.
+     * @param {Phaser.GameObjects.Sprite} unit - The unit searching.
+     * @param {boolean} isPlayerView - True to search player's grid, false for AI's grid.
      * @returns {{gridX: number, gridY: number} | null} Coordinates of the nearest hidden cell, or null if all are revealed.
      */
-    findNearestHiddenCell(unit) {
+    findNearestHiddenCell(unit, isPlayerView) {
+        const grid = isPlayerView ? this.playerFogGrid : this.aiFogGrid;
+        if (!grid) return null; // Grid not initialized
+
         let nearestCell = null;
         let minDistanceSq = Infinity;
 
         for (let y = 0; y < this.gridHeight; y++) {
             for (let x = 0; x < this.gridWidth; x++) {
-                if (!this.fogGrid[y][x]) { // If the cell is hidden
-                    // Calculate world coordinates of the cell center
+                if (!grid[y][x]) { // If the cell is hidden in the specified grid
                     const cellCenterX = x * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
                     const cellCenterY = y * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
-
-                    // Calculate squared distance from unit to cell center
                     const distanceSq = Phaser.Math.Distance.Squared(unit.x, unit.y, cellCenterX, cellCenterY);
 
                     if (distanceSq < minDistanceSq) {
@@ -541,9 +551,9 @@
 
 
     /**
-     * Handles clicks on the background (not on an interactive object). (Unchanged)
+     * Handles clicks on the background (not on an interactive object). (Modified to use startUnitMove)
      */
-    handleBackgroundClick(pointer) { /* ... same as before ... */
+    handleBackgroundClick(pointer) {
         if (this.gameOver || !this.gameStarted) return;
         if (this.objectClickedRecently) { this.objectClickedRecently = false; this.logDebug('BG click ignored (object clicked).'); return; }
         this.logDebug('Pointer down detected.');
@@ -795,34 +805,36 @@
 
 
     /**
-     * Finds the closest *visible* active tree to the specified worker.
+     * Finds the closest *visible* active tree to the specified worker, based on their perspective.
      * @param {Phaser.GameObjects.Sprite} workerSprite - The worker to find the closest tree for.
      * @returns {Phaser.GameObjects.Sprite | null} The closest visible tree or null.
      */
     findClosestTree(workerSprite) {
         if (!workerSprite || !this.trees) return null;
 
+        const isPlayer = workerSprite.getData('isPlayer'); // Determine perspective
         const activeTrees = this.trees.getChildren().filter(tree => tree.active);
         if (activeTrees.length === 0) return null;
 
         let closestVisibleTree = null;
         let minDistance = Infinity;
-        const workerIsPlayer = workerSprite.getData('isPlayer');
 
         activeTrees.forEach(tree => {
-            // --- Visibility Check ---
+            // --- Visibility Check (using perspective) ---
             const { gridX, gridY } = this.worldToGrid(tree.x, tree.y);
-            if (!this.isCellRevealed(gridX, gridY)) {
-                return; // Skip this tree, it's in the fog
+            if (!this.isCellRevealed(gridX, gridY, isPlayer)) { // Check correct grid
+                return; // Skip this tree, it's in the fog for this unit
             }
             // --- End Visibility Check ---
 
             // --- Target Avoidance Logic (Unchanged) ---
             let isTreeBusy = false;
+            // Check player worker (if not self)
             if (this.worker && this.worker.active && this.worker !== workerSprite) {
                  if (this.worker.isCutting && this.worker.cuttingTarget === tree) isTreeBusy = true;
                  if (this.worker.moving && this.worker.target === tree && this.worker.state === 'moving_to_chop') isTreeBusy = true;
             }
+             // Check AI worker (if not self)
              if (this.aiWorker && this.aiWorker.active && this.aiWorker !== workerSprite) {
                  if (this.aiWorker.isCutting && this.aiWorker.cuttingTarget === tree) isTreeBusy = true;
                  if (this.aiWorker.moving && this.aiWorker.target === tree && this.aiWorker.state === 'moving_to_chop') isTreeBusy = true;
@@ -982,7 +994,7 @@
             const side = workerSprite.getData('isPlayer') ? 'Player' : 'AI'; this.logDebug(`${side} barrack construction complete!`);
             if (workerSprite.getData('isPlayer')) { this.playerBarrackBuilding = false; } else { this.aiBarrackBuilding = false; }
             // --- Reveal FoW for the completed building ---
-            this.updateVisibilityAround(building);
+            this.updateVisibilityAround(building); // Use the perspective of the building itself
             // --- Stop worker ---
             this.stopBuilding(workerSprite); workerSprite.state = 'chopping';
        }
@@ -1022,13 +1034,13 @@
         // Only act if the worker is not currently busy moving, cutting, or building
         if (!workerSprite.moving && !workerSprite.isCutting && !workerSprite.isBuilding) {
             if (workerSprite.state === 'chopping' || workerSprite.state === 'idle') {
-                const closestVisibleTree = this.findClosestTree(workerSprite); // Uses updated function
+                const closestVisibleTree = this.findClosestTree(workerSprite); // Uses perspective
                 if (closestVisibleTree) {
                     if (workerSprite.state === 'idle') this.logDebug(`${side} worker idle, found visible tree.`);
                     this.sendWorkerToTree(workerSprite, closestVisibleTree);
                 } else {
                     // No visible trees left - find nearest hidden cell to explore
-                    const nearestHidden = this.findNearestHiddenCell(workerSprite);
+                    const nearestHidden = this.findNearestHiddenCell(workerSprite, isPlayer); // Use perspective
                     if (nearestHidden) {
                         this.logDebug(`No visible trees. ${side} Worker exploring nearest hidden cell at (${nearestHidden.gridX}, ${nearestHidden.gridY}).`);
                         const targetX = nearestHidden.gridX * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
@@ -1071,9 +1083,9 @@
     }
 
     /**
-     * Spawns a spearman near the specified barrack. Reveals FoW.
+     * Spawns a spearman near the specified barrack. Reveals FoW for the owner.
      */
-     spawnSpearman(barrack, isPlayer) { /* ... same logic as before, but reveal FoW ... */
+     spawnSpearman(barrack, isPlayer) {
         if (!barrack || !barrack.active || !barrack.isTraining) { this.logDebug("Spawn cancelled: Barrack invalid or not training."); this.destroyTrainingText(barrack); return; }
         barrack.isTraining = false; barrack.trainingTimer = null; this.destroyTrainingText(barrack);
         const spearmanArray = isPlayer ? this.playerSpearmen : this.aiSpearmen; const side = isPlayer ? 'Player' : 'AI';
@@ -1087,7 +1099,7 @@
         spearmanArray.push(spearman);
         const barColor = isPlayer ? PLAYER_HEALTH_BAR_COLOR : AI_HEALTH_BAR_COLOR; this.createHealthBar(spearman, SPEARMAN_HEALTH_BAR_WIDTH, barColor);
         this.logDebug(`${side} spearman spawned! (${spearmanArray.length}/${SPEARMAN_LIMIT}) at (${Math.round(finalSpawnPos.x)}, ${Math.round(finalSpawnPos.y)})`);
-        // --- Reveal FoW for the new spearman ---
+        // --- Reveal FoW for the new spearman (for its owner) ---
         this.updateVisibilityAround(spearman);
         // --- Handle movement if needed (unchanged) ---
         if (needsToMove) {
@@ -1106,21 +1118,21 @@
     // --- COMBAT FUNCTIONS (Modified for Visibility) ---
 
     /**
-     * Finds the closest *visible* active enemy target for a unit.
+     * Finds the closest *visible* active enemy target for a unit, based on the unit's perspective.
      */
     findClosestEnemyTarget(unit) {
         if (!unit || !unit.active) return null;
 
-        const isPlayerUnit = unit.getData('isPlayer');
+        const isPlayerUnit = unit.getData('isPlayer'); // Perspective of the searching unit
         let potentialTargets = [];
 
-        // Gather potential targets (unchanged)
-        if (isPlayerUnit) {
+        // Gather potential targets (enemies of the unit)
+        if (isPlayerUnit) { // Player unit looks for AI targets
             if (this.aiWorker && this.aiWorker.active) potentialTargets.push(this.aiWorker);
             if (this.aiBarrack && this.aiBarrack.active) potentialTargets.push(this.aiBarrack);
             if (this.aiHouse && this.aiHouse.active) potentialTargets.push(this.aiHouse);
             potentialTargets = potentialTargets.concat(this.aiSpearmen.filter(s => s.active));
-        } else {
+        } else { // AI unit looks for Player targets
             if (this.worker && this.worker.active) potentialTargets.push(this.worker);
             if (this.playerBarrack && this.playerBarrack.active) potentialTargets.push(this.playerBarrack);
             if (this.house && this.house.active) potentialTargets.push(this.house);
@@ -1133,10 +1145,10 @@
         let minDistanceSq = Infinity;
 
         potentialTargets.forEach(target => {
-            // --- Visibility Check ---
+            // --- Visibility Check (using the *searching unit's* perspective) ---
             const { gridX, gridY } = this.worldToGrid(target.x, target.y);
-            if (!this.isCellRevealed(gridX, gridY)) {
-                return; // Skip this target, it's in the fog
+            if (!this.isCellRevealed(gridX, gridY, isPlayerUnit)) { // Check visibility from the unit's perspective
+                return; // Skip this target, it's in the fog for the searching unit
             }
             // --- End Visibility Check ---
 
@@ -1147,7 +1159,7 @@
             }
         });
 
-        return closestVisibleTarget; // Return the closest one that is visible
+        return closestVisibleTarget; // Return the closest one that is visible to the searching unit
     }
 
      /**
@@ -1232,11 +1244,12 @@
     handleSpearmanState(spearman) {
         if (!this.gameStarted || this.gameOver || !spearman || !spearman.active) return;
 
-        const side = spearman.getData('isPlayer') ? 'Player' : 'AI';
+        const isPlayer = spearman.getData('isPlayer'); // Determine perspective
+        const side = isPlayer ? 'Player' : 'AI';
 
         // Only act if idle (not moving or attacking)
         if (spearman.state === 'idle' && !spearman.moving && !spearman.isAttacking) {
-            const target = this.findClosestEnemyTarget(spearman); // Uses updated function
+            const target = this.findClosestEnemyTarget(spearman); // Uses perspective
 
             if (target) {
                 const distance = Phaser.Math.Distance.Between(spearman.x, spearman.y, target.x, target.y);
@@ -1247,7 +1260,7 @@
                 }
             } else {
                 // No visible targets found - find nearest hidden cell to explore
-                const nearestHidden = this.findNearestHiddenCell(spearman);
+                const nearestHidden = this.findNearestHiddenCell(spearman, isPlayer); // Use perspective
                 if (nearestHidden) {
                      this.logDebug(`No visible targets. ${side} Spearman exploring nearest hidden cell at (${nearestHidden.gridX}, ${nearestHidden.gridY}).`);
                      const targetX = nearestHidden.gridX * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
@@ -1258,7 +1271,7 @@
                      if (spearman.state !== 'idle') {
                           this.logDebug(`No visible targets or hidden cells. ${side} Spearman truly idle.`);
                           spearman.state = 'idle';
-                          spearman.setTexture('spearman_walk_sheet'); spearman.anims.stop(); spearman.setFrame(0); spearman.setFlipX(!spearman.getData('isPlayer'));
+                          spearman.setTexture('spearman_walk_sheet'); spearman.anims.stop(); spearman.setFrame(0); spearman.setFlipX(!isPlayer);
                      }
                 }
             }
@@ -1272,7 +1285,7 @@
          else if ((spearman.state === 'moving_to_attack' || spearman.state === 'moving_to_explore') && !spearman.moving) {
               this.logDebug(`${side} spearman stuck in ${spearman.state} without moving flag. Resetting to idle.`);
               spearman.state = 'idle'; spearman.target = null; spearman.setTexture('spearman_walk_sheet');
-              spearman.anims.stop(); spearman.setFrame(0); spearman.setFlipX(!spearman.getData('isPlayer'));
+              spearman.anims.stop(); spearman.setFrame(0); spearman.setFlipX(!isPlayer);
          }
     }
 
@@ -1376,10 +1389,10 @@
         const allUnits = [this.worker, this.aiWorker, ...this.playerSpearmen, ...this.aiSpearmen];
         allUnits.forEach(unit => {
             if (unit && unit.active) {
-                this.updateVisibilityAround(unit); // Use the updated function
+                this.updateVisibilityAround(unit); // Use the updated function, reveals based on unit's owner
             }
         });
-        // Buildings reveal once on creation/completion, no need to update FoW for them every frame
+        // Buildings reveal once on creation/completion
 
         // --- Handle States ---
         if (this.worker && this.worker.active) this.handleWorkerState(this.worker);
