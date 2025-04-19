@@ -57,6 +57,10 @@
   const DAMAGE_TEXT_STYLE = { font: 'bold 16px Arial', fill: '#ff0000', stroke: '#000000', strokeThickness: 3 }; // Style for damage text
   const DAMAGE_TEXT_DURATION = 1200; // Milliseconds for damage text animation
   const DAMAGE_TEXT_Y_RISE = -60; // Pixels damage text rises
+  const ATTACK_FLASH_DURATION = 350; // Milliseconds for attack flash (increased further)
+  const ATTACK_FLASH_WIDTH = 4; // Width of the flash beam
+  const ATTACK_FLASH_LENGTH_FACTOR = 0.75; // Flash length relative to distance
+  const MIN_ATTACK_FLASH_LENGTH = 10; // Minimum flash length
 
 
   /**
@@ -1272,20 +1276,64 @@
     }
 
     /**
-     * Applies damage to the spearman's current target. (Unchanged)
+     * Applies damage to the spearman's current target and triggers attack flash.
      */
     damageTarget(spearman) {
-        if (this.gameOver || !spearman || !spearman.active || !spearman.isAttacking || !spearman.attackTarget || !spearman.attackTarget.active) { if (spearman && spearman.active && spearman.isAttacking) { this.stopAttacking(spearman); spearman.state = 'idle'; } return; }
-        const target = spearman.attackTarget; const side = spearman.getData('isPlayer') ? 'Player' : 'AI';
+        if (this.gameOver || !spearman || !spearman.active || !spearman.isAttacking || !spearman.attackTarget || !spearman.attackTarget.active) {
+            if (spearman && spearman.active && spearman.isAttacking) {
+                this.stopAttacking(spearman);
+                spearman.state = 'idle';
+            }
+            return;
+        }
+
+        const target = spearman.attackTarget;
+        const side = spearman.getData('isPlayer') ? 'Player' : 'AI';
         const distance = Phaser.Math.Distance.Between(spearman.x, spearman.y, target.x, target.y);
+
         if (distance > SPEARMAN_ATTACK_RANGE + 5) { // Add a small buffer
             this.logDebug(`${side} spearman target moved out of range. Stopping attack.`);
             this.stopAttacking(spearman);
             spearman.state = 'idle'; // Go idle, will re-evaluate in next update
             return;
         }
+
+        // --- Create Directed Attack Flash Effect ---
+        const angle = Phaser.Math.Angle.Between(spearman.x, spearman.y, target.x, target.y);
+        const flashLength = Math.max(MIN_ATTACK_FLASH_LENGTH, distance * ATTACK_FLASH_LENGTH_FACTOR);
+        const flashX = spearman.x;
+        const flashY = spearman.y - spearman.displayHeight / 3; // Start near center vertically
+
+        // Create the rectangle
+        const flash = this.add.rectangle(
+            flashX,
+            flashY,
+            flashLength, // Length based on distance
+            ATTACK_FLASH_WIDTH, // Fixed width
+            0xffff00 // Yellow color
+        );
+        flash.setOrigin(0, 0.5); // Set origin to the start of the beam (left center)
+        flash.setAngle(Phaser.Math.RadToDeg(angle)); // Rotate to point at target
+        flash.setDepth(5500); // Set high fixed depth
+
+        // Animate the flash fading out
+        this.tweens.add({
+            targets: flash,
+            alpha: 0, // Fade out
+            duration: ATTACK_FLASH_DURATION, // Use updated duration
+            ease: 'Power1',
+            onComplete: () => {
+                if (flash.active) {
+                    flash.destroy();
+                }
+            }
+        });
+        // --- End Attack Flash Effect ---
+
+        // Apply damage after showing the effect
         target.takeDamage(SPEARMAN_DPS, spearman);
     }
+
 
     /**
      * Handles a spearman's state machine logic, including exploring nearest hidden cell.
