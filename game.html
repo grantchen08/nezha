@@ -203,13 +203,14 @@
 
       // --- Add takeDamage method to prototypes ---
       const takeDamage = function(amount, attacker) {
-            if (!this.active || this.health <= 0) return; // Already dead or inactive
+            if (!this.active || this.health <= 0 || !this.scene) return; // Already dead/inactive or scene gone
 
+            const previousHealth = this.health;
             this.health -= amount;
             this.scene.updateHealthBar(this); // Update visual
 
             // --- Damage Flash Effect ---
-            if (this.scene && this.active) { // Check scene and active status
+            if (this.active) { // Check active status before tinting
                 this.setTintFill(DAMAGE_FLASH_TINT); // Apply red tint overlay
                 this.scene.time.delayedCall(DAMAGE_FLASH_DURATION, () => {
                     if (this.active) { // Check again in case destroyed during delay
@@ -219,9 +220,8 @@
             }
             // --- End Damage Flash Effect ---
 
-
             // --- Show Damage Text ---
-            if (amount > 0 && this.scene) { // Only show if actual damage and scene exists
+            if (amount > 0) {
                 const textX = this.x;
                 // Position slightly above the health bar (if exists) or the unit top
                 const yOffset = (this.healthBarBg ? this.healthBarBg.y - HEALTH_BAR_HEIGHT / 2 : this.y - (this.displayHeight || this.height)) - 10;
@@ -245,6 +245,35 @@
             }
             // --- End Show Damage Text ---
 
+            // --- Retaliation Logic ---
+            // Check if this unit is a spearman, was actually damaged, and the attacker is a valid enemy
+            if (this.getData('unitType') === 'spearman' && this.health < previousHealth && attacker && attacker.active && attacker.getData('isPlayer') !== this.getData('isPlayer')) {
+                // Check if the spearman is NOT currently following a direct player move command ('moving_to_idle')
+                // or already attacking/moving to attack the unit that just hit it.
+                const isUnderPlayerMoveOrder = (this.state === 'moving_to_idle');
+                const isTargetingAttacker = (this.state === 'attacking' && this.attackTarget === attacker) || (this.state === 'moving_to_attack' && this.target === attacker);
+
+                if (!isUnderPlayerMoveOrder && !isTargetingAttacker) {
+                    this.scene.logDebug(`${this.getData('isPlayer') ? 'Player' : 'AI'} spearman retaliating against ${attacker.getData('unitType')}`);
+                    // Stop current action
+                    if (this.isAttacking) this.scene.stopAttacking(this);
+                    if (this.moving) {
+                        this.scene.tweens.killTweensOf(this);
+                        this.moving = false;
+                        // Reset visual state if interrupted mid-move
+                        this.setTexture('spearman_walk_sheet');
+                        this.anims.stop();
+                        this.setFrame(0);
+                        this.setFlipX(!this.getData('isPlayer'));
+                    }
+                    // Attack back
+                    this.scene.sendSpearmanToAttack(this, attacker);
+                }
+            }
+            // --- End Retaliation Logic ---
+
+
+            // --- Death Check ---
             if (this.health <= 0) {
                 this.health = 0;
                 this.scene.logDebug(`${this.getData('unitType') || 'Object'} destroyed!`);
@@ -262,21 +291,20 @@
                 if (this.scene.selectedWorker === this) this.scene.selectedWorker = null;
                 if (this.scene.selectedSpearman === this) this.scene.selectedSpearman = null;
 
-                this.active = false;
+                this.active = false; // Set inactive immediately
                 this.setVisible(false);
                 this.scene.destroyHealthBar(this);
                 this.disableInteractive();
-                if (this.getData('unitType') === 'barrack') {
+                // Stop any active timers/actions specifically for this unit type upon death
+                if (unitType === 'barrack') {
                     if (this.trainingTimer) this.trainingTimer.remove();
                     this.scene.destroyTrainingText(this);
                     this.isTraining = false;
-                }
-                 if (this.getData('unitType') === 'worker') {
+                } else if (unitType === 'worker') {
                      if (this.isCutting) this.scene.stopCutting(this);
                      if (this.isBuilding) this.scene.stopBuilding(this);
                      if (this.moving) this.scene.tweens.killTweensOf(this);
-                 }
-                 if (this.getData('unitType') === 'spearman') {
+                 } else if (unitType === 'spearman') {
                      if (this.isAttacking) this.scene.stopAttacking(this);
                      if (this.moving) this.scene.tweens.killTweensOf(this);
                  }
@@ -1357,7 +1385,9 @@
         // Don't let AI act if player has selected it
         if (this.selectedSpearman === spearman && !spearman.getData('isPlayer')) return;
         // Don't act if player controlled and selected (waiting for command)
-        if (this.selectedSpearman === spearman && spearman.getData('isPlayer')) return;
+        // Exception: If the player commanded an attack and the target died/disappeared, allow re-evaluation.
+        if (this.selectedSpearman === spearman && spearman.getData('isPlayer') && spearman.state !== 'idle') return;
+
 
         const isPlayer = spearman.getData('isPlayer'); // Determine perspective
         const side = isPlayer ? 'Player' : 'AI';
