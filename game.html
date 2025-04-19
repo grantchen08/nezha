@@ -61,6 +61,8 @@
   const ATTACK_FLASH_WIDTH = 4; // Width of the flash beam
   const ATTACK_FLASH_LENGTH_FACTOR = 0.75; // Flash length relative to distance
   const MIN_ATTACK_FLASH_LENGTH = 10; // Minimum flash length
+  const DAMAGE_FLASH_TINT = 0xff0000; // Red tint for damage flash
+  const DAMAGE_FLASH_DURATION = 150; // Milliseconds for damage flash
 
 
   /**
@@ -205,6 +207,18 @@
 
             this.health -= amount;
             this.scene.updateHealthBar(this); // Update visual
+
+            // --- Damage Flash Effect ---
+            if (this.scene && this.active) { // Check scene and active status
+                this.setTintFill(DAMAGE_FLASH_TINT); // Apply red tint overlay
+                this.scene.time.delayedCall(DAMAGE_FLASH_DURATION, () => {
+                    if (this.active) { // Check again in case destroyed during delay
+                       this.clearTint();
+                    }
+                }, [], this);
+            }
+            // --- End Damage Flash Effect ---
+
 
             // --- Show Damage Text ---
             if (amount > 0 && this.scene) { // Only show if actual damage and scene exists
