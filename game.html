@@ -40,6 +40,7 @@
   const SPEARMAN_DPS = 1; // Damage per second
   const SPEARMAN_ATTACK_DELAY = 1000; // Milliseconds between attacks (1 attack per second)
   const SPEARMAN_ATTACK_RANGE = 45; // Range within which spearman can attack
+  const SPEARMAN_DEFENSE_RADIUS = 150; // Radius around buildings for defense goal
   const WORKER_HEALTH = 10;
   const HOUSE_HEALTH = 50;
   const BARRACK_HEALTH = 50;
@@ -250,11 +251,13 @@
             if (this.getData('unitType') === 'spearman' && this.health < previousHealth && attacker && attacker.active && attacker.getData('isPlayer') !== this.getData('isPlayer')) {
                 // Check if the spearman is NOT currently following a direct player move command ('moving_to_idle')
                 // or already attacking/moving to attack the unit that just hit it.
+                // Also check if the spearman's goal is not 'defend' and currently returning to base (state 'moving_to_defend_pos')
                 const isUnderPlayerMoveOrder = (this.state === 'moving_to_idle');
                 const isTargetingAttacker = (this.state === 'attacking' && this.attackTarget === attacker) || (this.state === 'moving_to_attack' && this.target === attacker);
+                const isReturningToDefend = (this.goal === 'defend' && this.state === 'moving_to_defend_pos');
 
-                if (!isUnderPlayerMoveOrder && !isTargetingAttacker) {
-                    this.scene.logDebug(`${this.getData('isPlayer') ? 'Player' : 'AI'} spearman retaliating against ${attacker.getData('unitType')}`);
+                if (!isUnderPlayerMoveOrder && !isTargetingAttacker && !isReturningToDefend) {
+                    this.scene.logDebug(`${this.getData('isPlayer') ? 'Player' : 'AI'} spearman (Goal: ${this.goal}) retaliating against ${attacker.getData('unitType')}`);
                     // Stop current action
                     if (this.isAttacking) this.scene.stopAttacking(this);
                     if (this.moving) {
@@ -268,6 +271,8 @@
                     }
                     // Attack back
                     this.scene.sendSpearmanToAttack(this, attacker);
+                } else if (isReturningToDefend) {
+                     this.scene.logDebug(`${this.getData('isPlayer') ? 'Player' : 'AI'} spearman (Goal: ${this.goal}) under attack while returning to defend. Ignoring retaliation.`);
                 }
             }
             // --- End Retaliation Logic ---
@@ -286,6 +291,10 @@
                 if (attacker && attacker.attackTarget === this) {
                     this.scene.stopAttacking(attacker);
                     attacker.state = 'idle';
+                    // If attacker was attacking, make it re-evaluate its goal
+                    if(attacker.getData('unitType') === 'spearman') {
+                         attacker.goal = attacker.goal; // Trigger re-evaluation in handleSpearmanState
+                    }
                 }
                 // If the destroyed unit was selected, deselect it
                 if (this.scene.selectedWorker === this) this.scene.selectedWorker = null;
@@ -408,7 +417,7 @@
         }
     }
 
-    // --- FOG OF WAR HELPER FUNCTIONS --- (Unchanged from previous version)
+    // --- FOG OF WAR HELPER FUNCTIONS ---
 
     /**
      * Converts world coordinates (like sprite x/y) to fog grid coordinates.
@@ -436,12 +445,31 @@
     revealCell(gridX, gridY, isPlayerView) {
         if (gridY < 0 || gridY >= this.gridHeight || gridX < 0 || gridX >= this.gridWidth) return;
         const targetGrid = isPlayerView ? this.playerFogGrid : this.aiFogGrid;
-        if (targetGrid[gridY][gridX]) return;
+        if (targetGrid[gridY][gridX]) return; // Already revealed
         targetGrid[gridY][gridX] = true;
         if (isPlayerView && this.fogRects[gridY] && this.fogRects[gridY][gridX]) { // Added check for row existence
             this.fogRects[gridY][gridX].setVisible(false);
         }
     }
+
+    /**
+     * Checks if all fog cells are revealed for a given perspective.
+     * @param {boolean} isPlayerView - True for player's perspective, false for AI's.
+     * @returns {boolean} True if all cells are revealed, false otherwise.
+     */
+    areAllCellsRevealed(isPlayerView) {
+        const grid = isPlayerView ? this.playerFogGrid : this.aiFogGrid;
+        if (!grid) return false; // Grid not initialized
+        for (let y = 0; y < this.gridHeight; y++) {
+            for (let x = 0; x < this.gridWidth; x++) {
+                if (!grid[y][x]) {
+                    return false; // Found an unrevealed cell
+                }
+            }
+        }
+        return true; // All cells checked and are revealed
+    }
+
 
     /**
      * Updates fog visibility around a given game object based on its bounds.
@@ -624,6 +652,7 @@
                 if (!isPlayerUnit && (unitType === 'worker' || unitType === 'spearman' || unitType === 'house' || unitType === 'barrack')) {
                     this.logDebug(`Commanding selected spearman to attack ${unitType}.`);
                     this.sendSpearmanToAttack(this.selectedSpearman, gameObject);
+                    this.selectedSpearman.goal = 'attack'; // Explicitly set goal to attack on player command
                     this.selectedSpearman.clearTint(); this.selectedSpearman = null; // Deselect after command
                 } else { // Clicked something else (tree, etc.) while spearman selected
                     this.logDebug('Clicked non-enemy object. Deselecting spearman.');
@@ -670,6 +699,7 @@
                 if (spearmanToMove.moving) this.tweens.killTweensOf(spearmanToMove); // Stop previous move tween
                 // Issue move command
                 this.startUnitMove(spearmanToMove, targetX, targetY, 'moving_to_idle', 'idle');
+                spearmanToMove.goal = 'idle'; // Player move command overrides goal temporarily
                 // Deselect
                 spearmanToMove.clearTint(); this.selectedSpearman = null;
             } else {
@@ -1178,7 +1208,7 @@
     }
 
     /**
-     * Spawns a spearman near the specified barrack. Reveals FoW for the owner.
+     * Spawns a spearman near the specified barrack. Reveals FoW for the owner. Assigns initial goal.
      */
       spawnSpearman(barrack, isPlayer) {
         if (!barrack || !barrack.active || !barrack.isTraining) { this.logDebug("Spawn cancelled: Barrack invalid or not training."); this.destroyTrainingText(barrack); return; }
@@ -1188,9 +1218,15 @@
         const initialSpawnX = barrack.x + (isPlayer ? 40 : -40); const initialSpawnY = barrack.y;
         let finalSpawnPos = { x: initialSpawnX, y: initialSpawnY }; let needsToMove = false;
         if (this.isPositionOccupied(initialSpawnX, initialSpawnY, null)) { this.logDebug("Spawn point occupied, finding nearby spot..."); finalSpawnPos = this.findNearbyEmptyPosition(initialSpawnX, initialSpawnY, 50, null); if (finalSpawnPos.x !== initialSpawnX || finalSpawnPos.y !== initialSpawnY) needsToMove = true; }
+
         const spearman = this.add.sprite(finalSpawnPos.x, finalSpawnPos.y, 'spearman_walk_sheet').setOrigin(0.5, 1);
         spearman.health = SPEARMAN_HEALTH; spearman.maxHealth = SPEARMAN_HEALTH; spearman.state = 'idle'; spearman.moving = false; spearman.attackTarget = null; spearman.isAttacking = false; spearman.attackTimer = null;
         spearman.setData('unitType', 'spearman'); spearman.setData('isPlayer', isPlayer); spearman.setFrame(0); spearman.setFlipX(!isPlayer);
+
+        // Assign initial goal
+        spearman.goal = (Math.random() < 0.5) ? 'attack' : 'defend';
+        this.logDebug(`${side} spearman assigned initial goal: ${spearman.goal}`);
+
         spearmanArray.push(spearman);
         const barColor = isPlayer ? PLAYER_HEALTH_BAR_COLOR : AI_HEALTH_BAR_COLOR; this.createHealthBar(spearman, SPEARMAN_HEALTH_BAR_WIDTH, barColor);
         spearman.setInteractive(); // Make spearman clickable
@@ -1211,7 +1247,7 @@
         }
     }
 
-    // --- COMBAT FUNCTIONS (Modified for Visibility) ---
+    // --- COMBAT & GOAL FUNCTIONS ---
 
     /**
      * Finds the closest *visible* active enemy target for a unit, based on the unit's perspective.
@@ -1258,12 +1294,45 @@
         return closestVisibleTarget; // Return the closest one that is visible to the searching unit
     }
 
+    /**
+     * Finds the closest active friendly building (House or Barrack) to a unit.
+     * @param {Phaser.GameObjects.Sprite} unit - The unit searching for a building.
+     * @returns {Phaser.GameObjects.Sprite|Phaser.GameObjects.Image|null} The closest building or null if none found.
+     */
+    findClosestFriendlyBuilding(unit) {
+        if (!unit || !unit.active) return null;
+        const isPlayer = unit.getData('isPlayer');
+        const buildings = [];
+        if (isPlayer) {
+            if (this.playerBarrack && this.playerBarrack.active) buildings.push(this.playerBarrack);
+            if (this.house && this.house.active) buildings.push(this.house);
+        } else {
+            if (this.aiBarrack && this.aiBarrack.active) buildings.push(this.aiBarrack);
+            if (this.aiHouse && this.aiHouse.active) buildings.push(this.aiHouse);
+        }
+
+        if (buildings.length === 0) return null;
+
+        let closestBuilding = null;
+        let minDistSq = Infinity;
+
+        buildings.forEach(building => {
+            const distSq = Phaser.Math.Distance.Squared(unit.x, unit.y, building.x, building.y);
+            if (distSq < minDistSq) {
+                minDistSq = distSq;
+                closestBuilding = building;
+            }
+        });
+        return closestBuilding;
+    }
+
+
       /**
          * Sends a spearman to move within attack range of a target.
          */
        sendSpearmanToAttack(spearman, target) {
         if (!spearman || !spearman.active || !target || !target.active || this.gameOver) { if(spearman && spearman.active) spearman.state = 'idle'; return; }
-        const side = spearman.getData('isPlayer') ? 'Player' : 'AI'; this.logDebug(`${side} spearman moving to attack ${target.getData('unitType') || 'target'}.`);
+        const side = spearman.getData('isPlayer') ? 'Player' : 'AI'; this.logDebug(`${side} spearman (Goal: ${spearman.goal}) moving to attack ${target.getData('unitType') || 'target'}.`);
         // Stop current actions before moving to attack
         if (spearman.isAttacking) this.stopAttacking(spearman);
         if (spearman.moving) this.tweens.killTweensOf(spearman); // Stop previous move
@@ -1291,7 +1360,7 @@
             this.tweens.killTweensOf(spearman);
             spearman.moving = false;
         }
-        const side = spearman.getData('isPlayer') ? 'Player' : 'AI'; this.logDebug(`${side} spearman starting attack on ${target.getData('unitType') || 'target'}.`);
+        const side = spearman.getData('isPlayer') ? 'Player' : 'AI'; this.logDebug(`${side} spearman (Goal: ${spearman.goal}) starting attack on ${target.getData('unitType') || 'target'}.`);
         spearman.state = 'attacking'; spearman.isAttacking = true; spearman.attackTarget = target;
         if (target.x < spearman.x) spearman.setFlipX(true); else spearman.setFlipX(false);
         spearman.setTexture('spearman_attack_sheet'); spearman.anims.play('spearman_attack', true);
@@ -1306,7 +1375,7 @@
      */
     stopAttacking(spearman) {
         if (!spearman || !spearman.isAttacking) return;
-        const side = spearman.getData('isPlayer') ? 'Player' : 'AI';
+        // const side = spearman.getData('isPlayer') ? 'Player' : 'AI'; // No need to log here, logged in start/damage
         if (spearman.attackTimer) { spearman.attackTimer.remove(false); spearman.attackTimer = null; }
         spearman.isAttacking = false; spearman.attackTarget = null;
         if (this.spearmanAttackSound && this.spearmanAttackSound.isPlaying) {
@@ -1334,7 +1403,7 @@
         const distance = Phaser.Math.Distance.Between(spearman.x, spearman.y, target.x, target.y);
 
         if (distance > SPEARMAN_ATTACK_RANGE + 5) { // Add a small buffer
-            this.logDebug(`${side} spearman target moved out of range. Stopping attack.`);
+            this.logDebug(`${side} spearman (Goal: ${spearman.goal}) target moved out of range. Stopping attack.`);
             this.stopAttacking(spearman);
             spearman.state = 'idle'; // Go idle, will re-evaluate in next update
             return;
@@ -1378,35 +1447,42 @@
 
 
     /**
-     * Handles a spearman's state machine logic, including exploring nearest hidden cell.
+     * Handles a spearman's state machine logic based on its assigned goal.
      */
     handleSpearmanState(spearman) {
         if (!this.gameStarted || this.gameOver || !spearman || !spearman.active) return;
-        // Don't let AI act if player has selected it
-        if (this.selectedSpearman === spearman && !spearman.getData('isPlayer')) return;
-        // Don't act if player controlled and selected (waiting for command)
-        // Exception: If the player commanded an attack and the target died/disappeared, allow re-evaluation.
-        if (this.selectedSpearman === spearman && spearman.getData('isPlayer') && spearman.state !== 'idle') return;
 
+        // Player control overrides goal temporarily if selected or moving to idle
+        if (spearman.getData('isPlayer') && (this.selectedSpearman === spearman || spearman.state === 'moving_to_idle')) {
+            // If moving to idle, let it finish, then it will re-evaluate
+            if (spearman.state === 'moving_to_idle' && !spearman.moving) {
+                spearman.state = 'idle'; // Arrived at player-commanded spot
+                spearman.goal = (Math.random() < 0.5) ? 'attack' : 'defend'; // Reassign goal after player move
+                this.logDebug(`Player spearman finished move command, re-evaluating goal to ${spearman.goal}`);
+            } else if (this.selectedSpearman === spearman) {
+                return; // Don't automate if selected by player
+            }
+        }
 
-        const isPlayer = spearman.getData('isPlayer'); // Determine perspective
+        const isPlayer = spearman.getData('isPlayer');
         const side = isPlayer ? 'Player' : 'AI';
 
-        // Handle attacking state when target becomes invalid or moves out of range
+        // --- Handle Active Attacking State ---
         if (spearman.state === 'attacking') {
             if (!spearman.attackTarget || !spearman.attackTarget.active) {
                 this.logDebug(`${side} spearman's target disappeared while attacking. Stopping.`);
-                this.stopAttacking(spearman); spearman.state = 'idle';
-                return; // Re-evaluate next frame
+                this.stopAttacking(spearman);
+                spearman.state = 'idle'; // Will re-evaluate goal next frame
+                return;
             }
             const distance = Phaser.Math.Distance.Between(spearman.x, spearman.y, spearman.attackTarget.x, spearman.attackTarget.y);
             if (distance > SPEARMAN_ATTACK_RANGE + 5) { // Check range again in update
                 this.logDebug(`${side} spearman target moved out of range during attack state. Stopping attack.`);
                 this.stopAttacking(spearman);
-                spearman.state = 'idle'; // Go idle, will re-evaluate in next update
+                spearman.state = 'idle'; // Will re-evaluate goal next frame
                 return;
             }
-            // If attacking, ensure correct animation and facing
+            // Ensure correct animation/facing if still attacking
             if (!spearman.anims.isPlaying || spearman.anims.currentAnim.key !== 'spearman_attack') {
                 spearman.anims.play('spearman_attack', true);
             }
@@ -1414,52 +1490,118 @@
             return; // Don't do other logic if actively attacking a valid target in range
         }
 
-
-        // Only act if idle or finished moving (not moving or attacking)
-        if (spearman.state === 'idle' && !spearman.moving && !spearman.isAttacking) {
-            const target = this.findClosestEnemyTarget(spearman); // Uses perspective
-
-            if (target) {
-                const distance = Phaser.Math.Distance.Between(spearman.x, spearman.y, target.x, target.y);
-                if (distance <= SPEARMAN_ATTACK_RANGE) {
-                    this.startAttacking(spearman, target);
-                } else {
-                    this.sendSpearmanToAttack(spearman, target);
-                }
-            } else {
-                // No visible targets found - find nearest hidden cell to explore (AI only for now)
-                if (!isPlayer) { // Only AI explores automatically
-                    const nearestHidden = this.findNearestHiddenCell(spearman, isPlayer); // Use perspective
-                    if (nearestHidden) {
-                        this.logDebug(`No visible targets. ${side} Spearman exploring nearest hidden cell at (${nearestHidden.gridX}, ${nearestHidden.gridY}).`);
-                        const targetX = nearestHidden.gridX * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
-                        const targetY = nearestHidden.gridY * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
-                        this.startUnitMove(spearman, targetX, targetY, 'moving_to_explore', 'idle'); // Move to explore, become idle on arrival
+        // --- Handle Non-Attacking States (Based on Goal) ---
+        if (!spearman.moving && !spearman.isAttacking) {
+            switch (spearman.goal) {
+                case 'attack':
+                    const attackTarget = this.findClosestEnemyTarget(spearman);
+                    if (attackTarget) {
+                        const distance = Phaser.Math.Distance.Between(spearman.x, spearman.y, attackTarget.x, attackTarget.y);
+                        if (distance <= SPEARMAN_ATTACK_RANGE) {
+                            this.startAttacking(spearman, attackTarget);
+                        } else {
+                            this.sendSpearmanToAttack(spearman, attackTarget);
+                        }
                     } else {
-                        // No visible targets AND no hidden cells - truly idle
-                        if (spearman.state !== 'idle') {
-                            this.logDebug(`No visible targets or hidden cells. ${side} Spearman truly idle.`);
-                            spearman.state = 'idle';
-                            spearman.setTexture('spearman_walk_sheet'); spearman.anims.stop(); spearman.setFrame(0); spearman.setFlipX(!isPlayer);
+                        // No visible targets, switch to scout
+                        this.logDebug(`${side} spearman (Attack Goal) found no visible targets. Switching to SCOUT goal.`);
+                        spearman.goal = 'scout';
+                        // Immediately try scouting logic
+                        this.handleSpearmanState(spearman);
+                    }
+                    break;
+
+                case 'defend':
+                    const defendTarget = this.findClosestEnemyTarget(spearman);
+                    let shouldAttack = false;
+                    if (defendTarget) {
+                        const distToTarget = Phaser.Math.Distance.Squared(spearman.x, spearman.y, defendTarget.x, defendTarget.y);
+                        // Check if target is within defense radius
+                        if (distToTarget <= SPEARMAN_DEFENSE_RADIUS * SPEARMAN_DEFENSE_RADIUS) {
+                            shouldAttack = true;
                         }
                     }
-                } else {
-                    // Player spearman is idle with no targets, just stay idle
-                    if (spearman.state !== 'idle') {
-                        spearman.state = 'idle';
-                        spearman.setTexture('spearman_walk_sheet'); spearman.anims.stop(); spearman.setFrame(0); spearman.setFlipX(!isPlayer);
+
+                    if (shouldAttack) {
+                        const distance = Phaser.Math.Distance.Between(spearman.x, spearman.y, defendTarget.x, defendTarget.y);
+                        if (distance <= SPEARMAN_ATTACK_RANGE) {
+                            this.startAttacking(spearman, defendTarget);
+                        } else {
+                            this.sendSpearmanToAttack(spearman, defendTarget);
+                        }
+                    } else {
+                        // No enemies nearby, ensure unit is near a friendly building
+                        const friendlyBuilding = this.findClosestFriendlyBuilding(spearman);
+                        if (friendlyBuilding) {
+                            const distToBaseSq = Phaser.Math.Distance.Squared(spearman.x, spearman.y, friendlyBuilding.x, friendlyBuilding.y);
+                            // If too far from the base, move back towards it (slightly offset)
+                            if (distToBaseSq > (SPEARMAN_DEFENSE_RADIUS / 2) * (SPEARMAN_DEFENSE_RADIUS / 2)) { // Use half radius as threshold to return
+                                const angleToBase = Phaser.Math.Angle.Between(spearman.x, spearman.y, friendlyBuilding.x, friendlyBuilding.y);
+                                const returnX = friendlyBuilding.x - Math.cos(angleToBase) * 30; // Stand near building
+                                const returnY = friendlyBuilding.y - Math.sin(angleToBase) * 30;
+                                this.logDebug(`${side} spearman (Defend Goal) returning to base near ${friendlyBuilding.getData('unitType')}.`);
+                                this.startUnitMove(spearman, returnX, returnY, 'moving_to_defend_pos', 'idle');
+                            } else {
+                                // Already near base and no enemies, stay idle
+                                spearman.state = 'idle';
+                                spearman.setTexture('spearman_walk_sheet'); spearman.anims.stop(); spearman.setFrame(0); spearman.setFlipX(!isPlayer);
+                            }
+                        } else {
+                             // No buildings left to defend, switch to attack
+                             this.logDebug(`${side} spearman (Defend Goal) found no buildings to defend. Switching to ATTACK goal.`);
+                             spearman.goal = 'attack';
+                             this.handleSpearmanState(spearman); // Re-evaluate immediately
+                        }
                     }
-                }
+                    break;
+
+                case 'scout':
+                    if (this.areAllCellsRevealed(isPlayer)) {
+                        // All fog revealed, switch goal
+                        spearman.goal = (Math.random() < 0.5) ? 'attack' : 'defend';
+                        this.logDebug(`${side} spearman (Scout Goal) finished scouting. Switching to ${spearman.goal} goal.`);
+                        this.handleSpearmanState(spearman); // Re-evaluate immediately
+                    } else {
+                        // Find nearest hidden cell
+                        const nearestHidden = this.findNearestHiddenCell(spearman, isPlayer);
+                        if (nearestHidden) {
+                            this.logDebug(`${side} spearman (Scout Goal) moving to explore hidden cell at (${nearestHidden.gridX}, ${nearestHidden.gridY}).`);
+                            const targetX = nearestHidden.gridX * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
+                            const targetY = nearestHidden.gridY * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
+                            this.startUnitMove(spearman, targetX, targetY, 'moving_to_explore', 'idle'); // Move to explore, become idle on arrival to re-evaluate
+                        } else {
+                            // Should not happen if areAllCellsRevealed is false, but as fallback, switch goal
+                            this.logDebug(`${side} spearman (Scout Goal) found no hidden cells but not all revealed? Switching to ATTACK.`);
+                            spearman.goal = 'attack';
+                            this.handleSpearmanState(spearman); // Re-evaluate immediately
+                        }
+                    }
+                    break;
+
+                case 'idle': // Handle case where player move finished, reassign goal
+                     spearman.goal = (Math.random() < 0.5) ? 'attack' : 'defend';
+                     this.logDebug(`${side} spearman was idle (likely post-player move), assigning goal: ${spearman.goal}`);
+                     this.handleSpearmanState(spearman); // Re-evaluate immediately
+                     break;
+
+                default:
+                    this.logDebug(`Error: Unknown goal '${spearman.goal}' for ${side} spearman. Setting to attack.`);
+                    spearman.goal = 'attack';
+                    break;
             }
         }
 
-        // Safety check: If stuck in moving state without flag
-        else if ((spearman.state === 'moving_to_attack' || spearman.state === 'moving_to_explore' || spearman.state === 'moving_to_idle') && !spearman.moving && !spearman.isAttacking) {
-            this.logDebug(`${side} spearman stuck in ${spearman.state} without moving flag. Resetting to idle.`);
-            spearman.state = 'idle'; spearman.target = null; spearman.setTexture('spearman_walk_sheet');
+        // Safety check: If stuck in moving state without flag (should be handled by startUnitMove onStop/onComplete)
+        else if ((spearman.state === 'moving_to_attack' || spearman.state === 'moving_to_explore' || spearman.state === 'moving_to_idle' || spearman.state === 'moving_to_defend_pos') && !spearman.moving && !spearman.isAttacking) {
+            this.logDebug(`${side} spearman stuck in ${spearman.state} without moving flag. Resetting state to idle.`);
+            spearman.state = 'idle';
+            spearman.target = null;
+            spearman.setTexture('spearman_walk_sheet');
             spearman.anims.stop(); spearman.setFrame(0); spearman.setFlipX(!isPlayer);
+            // Don't reset goal here, let the next idle check handle it
         }
     }
+
 
     /**
      * Initiates a movement tween for a unit towards a specific point.
@@ -1493,7 +1635,11 @@
         if (movingState !== 'moving_to_chop' && movingState !== 'moving_to_build' && movingState !== 'moving_to_attack') {
             unit.target = null;
         }
-        unit.attackTarget = null; // Clear attack target when moving
+         // Clear attack target unless specifically moving to attack
+        if (movingState !== 'moving_to_attack') {
+            unit.attackTarget = null;
+        }
+
 
         // Clamp target to game bounds (just in case)
         targetX = Phaser.Math.Clamp(targetX, 0, this.sys.game.config.width);
@@ -1582,7 +1728,11 @@
                     unit.setFlipX(unitType === 'spearman' ? !unit.getData('isPlayer') : false);
                     this.logDebug(`${side} ${unitType} finished move, now ${arrivalState}.`);
                 }
-                unit.target = null; // Clear move target after arrival
+                // Clear move target only if not immediately attacking
+                if (arrivalState !== 'attacking') {
+                     unit.target = null;
+                }
+
 
                 // Stop walk sound if needed
                 if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
@@ -1616,7 +1766,7 @@
     }
 
 
-    // --- END COMBAT & MOVEMENT ---
+    // --- END COMBAT & GOAL FUNCTIONS ---
 
 
     /**
