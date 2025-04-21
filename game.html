@@ -52,6 +52,8 @@
   const UNIT_COLLISION_RADIUS = 20; // Radius for checking unit overlap
   const HEALTH_BAR_HEIGHT = 8; // Main health bar height
   const TRAINING_TEXT_STYLE = { font: '14px Arial', fill: '#000000', backgroundColor: '#ffffff', padding: { x: 5, y: 2 }, borderRadius: 4 }; // Style for training text bubble
+  // *** NEW: Style for spearman goal text bubble ***
+  const GOAL_TEXT_STYLE = { font: '11px Arial', fill: '#ffffff', backgroundColor: 'rgba(0,0,0,0.5)', padding: { x: 3, y: 1 }, borderRadius: 3 };
   const FOG_CELL_SIZE = 64; // Size of fog of war grid cells
   const FOG_COLOR = 0x000000; // Black fog
   const FOG_ALPHA = 0.75; // Semi-transparent fog
@@ -316,6 +318,8 @@
                 } else if (unitType === 'spearman') {
                     if (this.isAttacking) this.scene.stopAttacking(this);
                     if (this.moving) this.scene.tweens.killTweensOf(this);
+                    // *** NEW: Destroy goal text on death ***
+                    if (this.goalText) { this.goalText.destroy(); this.goalText = null; }
                 }
                 this.scene.checkEndCondition();
             }
@@ -653,6 +657,8 @@
                     this.logDebug(`Commanding selected spearman to attack ${unitType}.`);
                     this.sendSpearmanToAttack(this.selectedSpearman, gameObject);
                     this.selectedSpearman.goal = 'attack'; // Explicitly set goal to attack on player command
+                    // *** NEW: Update goal text on player command ***
+                    if (this.selectedSpearman.goalText) { this.selectedSpearman.goalText.setText('attack'); }
                     this.selectedSpearman.clearTint(); this.selectedSpearman = null; // Deselect after command
                 } else { // Clicked something else (tree, etc.) while spearman selected
                     this.logDebug('Clicked non-enemy object. Deselecting spearman.');
@@ -700,6 +706,8 @@
                 // Issue move command
                 this.startUnitMove(spearmanToMove, targetX, targetY, 'moving_to_idle', 'idle');
                 spearmanToMove.goal = 'idle'; // Player move command overrides goal temporarily
+                 // *** NEW: Update goal text on player move command ***
+                 if (spearmanToMove.goalText) { spearmanToMove.goalText.setText('moving'); } // Indicate general move
                 // Deselect
                 spearmanToMove.clearTint(); this.selectedSpearman = null;
             } else {
@@ -750,16 +758,16 @@
     }
 
       /**
-         * Updates the position and fill of a specific tree's health bar. (Unchanged)
-         */
-       updateTreeHealthBar(tree) {
-        if (!tree || !tree.active || !tree.healthBarBg || !tree.healthBarFill) { this.destroyTreeHealthBar(tree); return; }
-        const barWidth = tree.healthBarWidth; const yOffset = -tree.displayHeight - 5;
-        const x = tree.x; const y = tree.y + yOffset;
-        tree.healthBarBg.setPosition(x, y); tree.healthBarFill.setPosition(x - barWidth / 2, y);
-        const fillWidth = Math.max(0, (tree.health / tree.maxHealth) * barWidth);
-        tree.healthBarFill.width = fillWidth;
-        tree.healthBarBg.setDepth(tree.depth + 1); tree.healthBarFill.setDepth(tree.depth + 2);
+        * Updates the position and fill of a specific tree's health bar. (Unchanged)
+        */
+        updateTreeHealthBar(tree) {
+       if (!tree || !tree.active || !tree.healthBarBg || !tree.healthBarFill) { this.destroyTreeHealthBar(tree); return; }
+       const barWidth = tree.healthBarWidth; const yOffset = -tree.displayHeight - 5;
+       const x = tree.x; const y = tree.y + yOffset;
+       tree.healthBarBg.setPosition(x, y); tree.healthBarFill.setPosition(x - barWidth / 2, y);
+       const fillWidth = Math.max(0, (tree.health / tree.maxHealth) * barWidth);
+       tree.healthBarFill.width = fillWidth;
+       tree.healthBarBg.setDepth(tree.depth + 1); tree.healthBarFill.setDepth(tree.depth + 2);
        }
 
     /**
@@ -868,7 +876,7 @@
         if (this.chopSound && this.chopSound.isPlaying) this.chopSound.stop();
         if (this.spearmanAttackSound && this.spearmanAttackSound.isPlaying) this.spearmanAttackSound.stop();
         [this.worker, this.aiWorker].forEach(w => { if (w && w.active) { if (w.isCutting) this.stopCutting(w); if (w.isBuilding) this.stopBuilding(w); w.state = 'idle'; w.moving = false; w.target = null; w.setTexture('worker_sheet'); w.anims.stop(); w.setFrame(0); w.setFlipX(false); } });
-        [...this.playerSpearmen, ...this.aiSpearmen].forEach(spearman => { if (spearman && spearman.active) { if(spearman.isAttacking) this.stopAttacking(spearman); spearman.state = 'idle'; spearman.moving = false; spearman.attackTarget = null; spearman.setTexture('spearman_walk_sheet'); spearman.anims.stop(); spearman.setFrame(0); spearman.setFlipX(false); } });
+        [...this.playerSpearmen, ...this.aiSpearmen].forEach(spearman => { if (spearman && spearman.active) { if(spearman.isAttacking) this.stopAttacking(spearman); spearman.state = 'idle'; spearman.moving = false; spearman.attackTarget = null; spearman.setTexture('spearman_walk_sheet'); spearman.anims.stop(); spearman.setFrame(0); spearman.setFlipX(false); if (spearman.goalText) spearman.goalText.destroy(); } }); // Destroy goal text on game end
         [this.playerBarrack, this.aiBarrack].forEach(barrack => { if (barrack && barrack.active) { if (barrack.trainingTimer) barrack.trainingTimer.remove(); this.destroyTrainingText(barrack); barrack.isTraining = false; } });
         if (this.trees) { this.trees.getChildren().forEach(tree => this.destroyTreeHealthBar(tree)); }
         console.log("Game Over:", message);
@@ -890,40 +898,40 @@
     }
 
       /**
-         * Destroys the health bar associated with any unit/building. (Unchanged)
-         */
-       destroyHealthBar(unit) {
-        if (unit) { if (unit.healthBarBg) { unit.healthBarBg.destroy(); unit.healthBarBg = null; } if (unit.healthBarFill) { unit.healthBarFill.destroy(); unit.healthBarFill = null; } }
+        * Destroys the health bar associated with any unit/building. (Unchanged)
+        */
+        destroyHealthBar(unit) {
+       if (unit) { if (unit.healthBarBg) { unit.healthBarBg.destroy(); unit.healthBarBg = null; } if (unit.healthBarFill) { unit.healthBarFill.destroy(); unit.healthBarFill = null; } }
        }
 
-       /**
-         * Creates a training progress text bubble for a barrack. (Unchanged)
-         */
-       createTrainingText(barrack) {
-        if (!barrack || !barrack.active || barrack.trainingText) return;
-        this.logDebug("Creating training text..."); this.destroyTrainingText(barrack);
-        barrack.trainingText = this.add.text(0, 0, '0%', TRAINING_TEXT_STYLE).setOrigin(0.5, 1);
-        if (!barrack.trainingText) { this.logDebug("ERROR: Failed to create text object!"); return; }
-        this.updateTrainingText(barrack); this.logDebug("Training text created.");
+      /**
+        * Creates a training progress text bubble for a barrack. (Unchanged)
+        */
+        createTrainingText(barrack) {
+       if (!barrack || !barrack.active || barrack.trainingText) return;
+       this.logDebug("Creating training text..."); this.destroyTrainingText(barrack);
+       barrack.trainingText = this.add.text(0, 0, '0%', TRAINING_TEXT_STYLE).setOrigin(0.5, 1);
+       if (!barrack.trainingText) { this.logDebug("ERROR: Failed to create text object!"); return; }
+       this.updateTrainingText(barrack); this.logDebug("Training text created.");
        }
 
-       /**
-         * Updates the position and content of a barrack's training text bubble. (Unchanged)
-         */
-       updateTrainingText(barrack) {
-        if (!barrack || !barrack.active || !barrack.isTraining || !barrack.trainingText || !barrack.trainingText.active) { this.destroyTrainingText(barrack); return; }
-        if (!barrack.trainingTimer) return;
-        const text = barrack.trainingText; const unitHeight = barrack.displayHeight || barrack.height || 64;
-        const yOffset = -unitHeight - 5 - HEALTH_BAR_HEIGHT - 5; const x = barrack.x; const y = barrack.y + yOffset;
-        text.setPosition(x, y); const progress = barrack.trainingTimer.getProgress(); const percent = Math.floor(progress * 100);
-        text.setText(percent + '%');
+      /**
+        * Updates the position and content of a barrack's training text bubble. (Unchanged)
+        */
+        updateTrainingText(barrack) {
+       if (!barrack || !barrack.active || !barrack.isTraining || !barrack.trainingText || !barrack.trainingText.active) { this.destroyTrainingText(barrack); return; }
+       if (!barrack.trainingTimer) return;
+       const text = barrack.trainingText; const unitHeight = barrack.displayHeight || barrack.height || 64;
+       const yOffset = -unitHeight - 5 - HEALTH_BAR_HEIGHT - 5; const x = barrack.x; const y = barrack.y + yOffset;
+       text.setPosition(x, y); const progress = barrack.trainingTimer.getProgress(); const percent = Math.floor(progress * 100);
+       text.setText(percent + '%');
        }
 
-       /**
-         * Destroys the training text bubble associated with a barrack. (Unchanged)
-         */
-       destroyTrainingText(barrack) {
-        if (barrack && barrack.trainingText && barrack.trainingText.active) { barrack.trainingText.destroy(); barrack.trainingText = null; }
+      /**
+        * Destroys the training text bubble associated with a barrack. (Unchanged)
+        */
+        destroyTrainingText(barrack) {
+       if (barrack && barrack.trainingText && barrack.trainingText.active) { barrack.trainingText.destroy(); barrack.trainingText = null; }
        }
 
 
@@ -1032,9 +1040,9 @@
     }
 
       /**
-         * Starts the process of building a barrack for a specific side. (Reveal FoW on completion)
-         */
-       startBuildingBarrack(workerSprite, side = 'player') {
+        * Starts the process of building a barrack for a specific side. (Reveal FoW on completion)
+        */
+        startBuildingBarrack(workerSprite, side = 'player') {
         const isPlayer = side === 'player'; const woodCount = isPlayer ? this.wood : this.aiWood; const existingBarrack = isPlayer ? this.playerBarrack : this.aiBarrack;
         const isBuildingThisBarrack = isPlayer ? this.playerBarrackBuilding : this.aiBarrackBuilding; const house = isPlayer ? this.house : this.aiHouse; const woodCost = BARRACK_WOOD_COST;
         if (!workerSprite || !workerSprite.active || !house || !house.active || (existingBarrack && existingBarrack.active) || isBuildingThisBarrack || woodCount < woodCost ) { if (!isPlayer && workerSprite.state === 'idle') workerSprite.state = 'chopping'; return; }
@@ -1101,9 +1109,9 @@
 
 
       /**
-         * Increases health of the structure being built. Reveals FoW on completion.
-         */
-       buildStructure(workerSprite) {
+        * Increases health of the structure being built. Reveals FoW on completion.
+        */
+        buildStructure(workerSprite) {
         if (this.gameOver || !workerSprite || !workerSprite.active || !workerSprite.isBuilding || !workerSprite.buildingTarget || !workerSprite.buildingTarget.active) {
             this.stopBuilding(workerSprite);
             if(workerSprite && workerSprite.active && workerSprite.isBuilding && !workerSprite.buildingTarget) { const side = workerSprite.getData('isPlayer') ? 'player' : 'ai'; this.logDebug(`Build target disappeared while ${side} worker was building.`); this.stopBuilding(workerSprite); workerSprite.state = 'idle'; }
@@ -1123,15 +1131,15 @@
         }
        }
 
-       /**
-         * Stops the current building process for a specific worker. (Unchanged)
-         */
-       stopBuilding(workerSprite) {
-        if (!workerSprite || !workerSprite.isBuilding) return;
-        const side = workerSprite.getData('isPlayer') ? 'Player' : 'AI';
-        if (workerSprite.buildingTimer) { workerSprite.buildingTimer.remove(false); workerSprite.buildingTimer = null; }
-        if (this.chopSound && this.chopSound.isPlaying) { const otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker; const otherWorkerBusy = otherWorker && otherWorker.active && (otherWorker.isCutting || otherWorker.isBuilding); if (!otherWorkerBusy) this.chopSound.stop(); }
-        workerSprite.isBuilding = false; workerSprite.buildingTarget = null; workerSprite.setTexture('worker_sheet'); workerSprite.anims.stop('worker_chop'); workerSprite.setFrame(0); workerSprite.setFlipX(false);
+      /**
+        * Stops the current building process for a specific worker. (Unchanged)
+        */
+        stopBuilding(workerSprite) {
+       if (!workerSprite || !workerSprite.isBuilding) return;
+       const side = workerSprite.getData('isPlayer') ? 'Player' : 'AI';
+       if (workerSprite.buildingTimer) { workerSprite.buildingTimer.remove(false); workerSprite.buildingTimer = null; }
+       if (this.chopSound && this.chopSound.isPlaying) { const otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker; const otherWorkerBusy = otherWorker && otherWorker.active && (otherWorker.isCutting || otherWorker.isBuilding); if (!otherWorkerBusy) this.chopSound.stop(); }
+       workerSprite.isBuilding = false; workerSprite.buildingTarget = null; workerSprite.setTexture('worker_sheet'); workerSprite.anims.stop('worker_chop'); workerSprite.setFrame(0); workerSprite.setFlipX(false);
        }
 
 
@@ -1226,6 +1234,10 @@
         // Assign initial goal
         spearman.goal = (Math.random() < 0.5) ? 'attack' : 'defend';
         this.logDebug(`${side} spearman assigned initial goal: ${spearman.goal}`);
+
+        // *** NEW: Create goal text bubble ***
+        spearman.goalText = this.add.text(0, 0, spearman.goal, GOAL_TEXT_STYLE).setOrigin(0.5, 1);
+        // Initial position will be set in update
 
         spearmanArray.push(spearman);
         const barColor = isPlayer ? PLAYER_HEALTH_BAR_COLOR : AI_HEALTH_BAR_COLOR; this.createHealthBar(spearman, SPEARMAN_HEALTH_BAR_WIDTH, barColor);
@@ -1328,9 +1340,9 @@
 
 
       /**
-         * Sends a spearman to move within attack range of a target.
-         */
-       sendSpearmanToAttack(spearman, target) {
+        * Sends a spearman to move within attack range of a target.
+        */
+        sendSpearmanToAttack(spearman, target) {
         if (!spearman || !spearman.active || !target || !target.active || this.gameOver) { if(spearman && spearman.active) spearman.state = 'idle'; return; }
         const side = spearman.getData('isPlayer') ? 'Player' : 'AI'; this.logDebug(`${side} spearman (Goal: ${spearman.goal}) moving to attack ${target.getData('unitType') || 'target'}.`);
         // Stop current actions before moving to attack
@@ -1341,6 +1353,8 @@
         spearman.target = target; // Set the new target for movement reference
         spearman.moving = true;
         spearman.state = 'moving_to_attack';
+        // *** NEW: Update goal text ***
+        if (spearman.goalText) spearman.goalText.setText('attack');
 
         const angleToTarget = Phaser.Math.Angle.Between(spearman.x, spearman.y, target.x, target.y);
         // Move slightly closer than max range to ensure attack starts
@@ -1348,12 +1362,12 @@
         const targetY = target.y - Math.sin(angleToTarget) * (SPEARMAN_ATTACK_RANGE - 10);
 
         this.startUnitMove(spearman, targetX, targetY, 'moving_to_attack', 'attacking'); // Use startUnitMove, transition to 'attacking' state on arrival
-       }
+        }
 
-       /**
-         * Starts the attack sequence for a spearman.
-         */
-       startAttacking(spearman, target) {
+      /**
+        * Starts the attack sequence for a spearman.
+        */
+        startAttacking(spearman, target) {
         if (!spearman || !spearman.active || !target || !target.active || spearman.isAttacking || this.gameOver) return;
         // Stop movement if any
         if (spearman.moving) {
@@ -1362,13 +1376,16 @@
         }
         const side = spearman.getData('isPlayer') ? 'Player' : 'AI'; this.logDebug(`${side} spearman (Goal: ${spearman.goal}) starting attack on ${target.getData('unitType') || 'target'}.`);
         spearman.state = 'attacking'; spearman.isAttacking = true; spearman.attackTarget = target;
+        // *** NEW: Update goal text ***
+        if (spearman.goalText) spearman.goalText.setText('attack');
+
         if (target.x < spearman.x) spearman.setFlipX(true); else spearman.setFlipX(false);
         spearman.setTexture('spearman_attack_sheet'); spearman.anims.play('spearman_attack', true);
         if (this.spearmanAttackSound && !this.spearmanAttackSound.isPlaying) this.spearmanAttackSound.play({ loop: true });
         // Ensure attack timer doesn't already exist
         if (spearman.attackTimer) spearman.attackTimer.remove(false);
         spearman.attackTimer = this.time.addEvent({ delay: SPEARMAN_ATTACK_DELAY, callback: () => this.damageTarget(spearman), callbackScope: this, loop: true });
-       }
+        }
 
     /**
      * Stops the attack sequence for a spearman. (Unchanged)
@@ -1394,6 +1411,8 @@
             if (spearman && spearman.active && spearman.isAttacking) {
                 this.stopAttacking(spearman);
                 spearman.state = 'idle';
+                 // *** NEW: Update goal text ***
+                 if (spearman.goalText) spearman.goalText.setText(spearman.goal || 'idle');
             }
             return;
         }
@@ -1406,6 +1425,8 @@
             this.logDebug(`${side} spearman (Goal: ${spearman.goal}) target moved out of range. Stopping attack.`);
             this.stopAttacking(spearman);
             spearman.state = 'idle'; // Go idle, will re-evaluate in next update
+             // *** NEW: Update goal text ***
+             if (spearman.goalText) spearman.goalText.setText(spearman.goal || 'idle');
             return;
         }
 
@@ -1448,6 +1469,7 @@
 
     /**
      * Handles a spearman's state machine logic based on its assigned goal.
+     * *** MODIFIED: Updates goal text. ***
      */
     handleSpearmanState(spearman) {
         if (!this.gameStarted || this.gameOver || !spearman || !spearman.active) return;
@@ -1459,7 +1481,11 @@
                 spearman.state = 'idle'; // Arrived at player-commanded spot
                 spearman.goal = (Math.random() < 0.5) ? 'attack' : 'defend'; // Reassign goal after player move
                 this.logDebug(`Player spearman finished move command, re-evaluating goal to ${spearman.goal}`);
+                 // *** NEW: Update goal text ***
+                 if (spearman.goalText) spearman.goalText.setText(spearman.goal);
             } else if (this.selectedSpearman === spearman) {
+                 // *** NEW: Update goal text if selected ***
+                 if (spearman.goalText) spearman.goalText.setText('selected');
                 return; // Don't automate if selected by player
             }
         }
@@ -1473,6 +1499,8 @@
                 this.logDebug(`${side} spearman's target disappeared while attacking. Stopping.`);
                 this.stopAttacking(spearman);
                 spearman.state = 'idle'; // Will re-evaluate goal next frame
+                 // *** NEW: Update goal text ***
+                 if (spearman.goalText) spearman.goalText.setText(spearman.goal || 'idle');
                 return;
             }
             const distance = Phaser.Math.Distance.Between(spearman.x, spearman.y, spearman.attackTarget.x, spearman.attackTarget.y);
@@ -1480,6 +1508,8 @@
                 this.logDebug(`${side} spearman target moved out of range during attack state. Stopping attack.`);
                 this.stopAttacking(spearman);
                 spearman.state = 'idle'; // Will re-evaluate goal next frame
+                 // *** NEW: Update goal text ***
+                 if (spearman.goalText) spearman.goalText.setText(spearman.goal || 'idle');
                 return;
             }
             // Ensure correct animation/facing if still attacking
@@ -1487,11 +1517,18 @@
                 spearman.anims.play('spearman_attack', true);
             }
             if (spearman.attackTarget.x < spearman.x) spearman.setFlipX(true); else spearman.setFlipX(false);
+            // *** NEW: Ensure goal text shows 'attack' while attacking ***
+            if (spearman.goalText && spearman.goalText.text !== 'attack') spearman.goalText.setText('attack');
             return; // Don't do other logic if actively attacking a valid target in range
         }
 
         // --- Handle Non-Attacking States (Based on Goal) ---
         if (!spearman.moving && !spearman.isAttacking) {
+            // *** NEW: Update goal text based on current goal before deciding action ***
+            if (spearman.goalText && spearman.goalText.text !== spearman.goal) {
+                spearman.goalText.setText(spearman.goal || 'idle');
+            }
+
             switch (spearman.goal) {
                 case 'attack':
                     const attackTarget = this.findClosestEnemyTarget(spearman);
@@ -1507,7 +1544,7 @@
                         this.logDebug(`${side} spearman (Attack Goal) found no visible targets. Switching to SCOUT goal.`);
                         spearman.goal = 'scout';
                         // Immediately try scouting logic
-                        this.handleSpearmanState(spearman);
+                        this.handleSpearmanState(spearman); // Re-evaluate (will update text)
                     }
                     break;
 
@@ -1541,16 +1578,20 @@
                                 const returnY = friendlyBuilding.y - Math.sin(angleToBase) * 30;
                                 this.logDebug(`${side} spearman (Defend Goal) returning to base near ${friendlyBuilding.getData('unitType')}.`);
                                 this.startUnitMove(spearman, returnX, returnY, 'moving_to_defend_pos', 'idle');
+                                // *** NEW: Update goal text ***
+                                if (spearman.goalText) spearman.goalText.setText('defend');
                             } else {
                                 // Already near base and no enemies, stay idle
                                 spearman.state = 'idle';
                                 spearman.setTexture('spearman_walk_sheet'); spearman.anims.stop(); spearman.setFrame(0); spearman.setFlipX(!isPlayer);
+                                // *** NEW: Update goal text ***
+                                if (spearman.goalText) spearman.goalText.setText('defend');
                             }
                         } else {
                              // No buildings left to defend, switch to attack
                              this.logDebug(`${side} spearman (Defend Goal) found no buildings to defend. Switching to ATTACK goal.`);
                              spearman.goal = 'attack';
-                             this.handleSpearmanState(spearman); // Re-evaluate immediately
+                             this.handleSpearmanState(spearman); // Re-evaluate (will update text)
                         }
                     }
                     break;
@@ -1560,7 +1601,7 @@
                         // All fog revealed, switch goal
                         spearman.goal = (Math.random() < 0.5) ? 'attack' : 'defend';
                         this.logDebug(`${side} spearman (Scout Goal) finished scouting. Switching to ${spearman.goal} goal.`);
-                        this.handleSpearmanState(spearman); // Re-evaluate immediately
+                        this.handleSpearmanState(spearman); // Re-evaluate (will update text)
                     } else {
                         // Find nearest hidden cell
                         const nearestHidden = this.findNearestHiddenCell(spearman, isPlayer);
@@ -1569,11 +1610,13 @@
                             const targetX = nearestHidden.gridX * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
                             const targetY = nearestHidden.gridY * FOG_CELL_SIZE + FOG_CELL_SIZE / 2;
                             this.startUnitMove(spearman, targetX, targetY, 'moving_to_explore', 'idle'); // Move to explore, become idle on arrival to re-evaluate
+                             // *** NEW: Update goal text ***
+                             if (spearman.goalText) spearman.goalText.setText('scout');
                         } else {
                             // Should not happen if areAllCellsRevealed is false, but as fallback, switch goal
                             this.logDebug(`${side} spearman (Scout Goal) found no hidden cells but not all revealed? Switching to ATTACK.`);
                             spearman.goal = 'attack';
-                            this.handleSpearmanState(spearman); // Re-evaluate immediately
+                            this.handleSpearmanState(spearman); // Re-evaluate (will update text)
                         }
                     }
                     break;
@@ -1581,12 +1624,14 @@
                 case 'idle': // Handle case where player move finished, reassign goal
                      spearman.goal = (Math.random() < 0.5) ? 'attack' : 'defend';
                      this.logDebug(`${side} spearman was idle (likely post-player move), assigning goal: ${spearman.goal}`);
-                     this.handleSpearmanState(spearman); // Re-evaluate immediately
+                     this.handleSpearmanState(spearman); // Re-evaluate (will update text)
                      break;
 
                 default:
                     this.logDebug(`Error: Unknown goal '${spearman.goal}' for ${side} spearman. Setting to attack.`);
                     spearman.goal = 'attack';
+                     // *** NEW: Update goal text ***
+                     if (spearman.goalText) spearman.goalText.setText('attack');
                     break;
             }
         }
@@ -1598,7 +1643,8 @@
             spearman.target = null;
             spearman.setTexture('spearman_walk_sheet');
             spearman.anims.stop(); spearman.setFrame(0); spearman.setFlipX(!isPlayer);
-            // Don't reset goal here, let the next idle check handle it
+            // *** NEW: Update goal text ***
+            if (spearman.goalText) spearman.goalText.setText(spearman.goal || 'idle');
         }
     }
 
@@ -1681,6 +1727,8 @@
                         unit.moving = false; // Ensure moving flag is cleared
                         // Don't force state if it was changed externally
                         if (unit.state === movingState) unit.state = 'idle';
+                         // *** NEW: Update goal text on move interruption ***
+                         if (unit.goalText && unitType === 'spearman') unit.goalText.setText(unit.goal || 'idle');
                     }
                     return;
                 }
@@ -1718,6 +1766,8 @@
                         unit.setTexture(unitType === 'worker' ? 'worker_sheet' : 'spearman_walk_sheet');
                         unit.setFrame(0);
                         unit.setFlipX(unitType === 'spearman' ? !unit.getData('isPlayer') : false);
+                         // *** NEW: Update goal text ***
+                         if (unit.goalText && unitType === 'spearman') unit.goalText.setText(unit.goal || 'idle');
                     }
                 } else {
                     // Default arrival state (usually 'idle')
@@ -1727,6 +1777,8 @@
                     unit.setFrame(0);
                     unit.setFlipX(unitType === 'spearman' ? !unit.getData('isPlayer') : false);
                     this.logDebug(`${side} ${unitType} finished move, now ${arrivalState}.`);
+                     // *** NEW: Update goal text on arrival ***
+                     if (unit.goalText && unitType === 'spearman') unit.goalText.setText(unit.goal || arrivalState); // Show goal or final state
                 }
                 // Clear move target only if not immediately attacking
                 if (arrivalState !== 'attacking') {
@@ -1753,6 +1805,8 @@
                     unit.setFrame(0);
                     unit.setFlipX(unitType === 'spearman' ? !unit.getData('isPlayer') : false);
                     this.logDebug(`${side} ${unitType} move (${movingState}) interrupted, going idle.`);
+                     // *** NEW: Update goal text on move stop ***
+                     if (unit.goalText && unitType === 'spearman') unit.goalText.setText(unit.goal || 'idle');
                 }
                 // Stop walk sound if needed
                 if (this.workerWalkSound && this.workerWalkSound.isPlaying && wasMoving) {
@@ -1771,6 +1825,7 @@
 
     /**
      * Game loop update function. Runs continuously.
+     * *** MODIFIED: Updates goal text position and depth. ***
      */
     update(time, delta) {
         if (!this.gameStarted || this.gameOver) return;
@@ -1817,6 +1872,12 @@
                 sprite.setDepth(index);
                 if (sprite.healthBarBg) { this.updateHealthBar(sprite); sprite.healthBarBg.setDepth(index + 1); sprite.healthBarFill.setDepth(index + 2); }
                 if (sprite.trainingText) { this.updateTrainingText(sprite); sprite.trainingText.setDepth(index + 10); }
+                // *** NEW: Update goal text position and depth ***
+                if (sprite.goalText && sprite.getData('unitType') === 'spearman') {
+                    const yOffset = (sprite.healthBarBg ? sprite.healthBarBg.y - HEALTH_BAR_HEIGHT : sprite.y - sprite.displayHeight) - 10; // Position above health bar or unit
+                    sprite.goalText.setPosition(sprite.x, yOffset);
+                    sprite.goalText.setDepth(index + 11); // Ensure it's above health bar
+                }
             }
         });
 
