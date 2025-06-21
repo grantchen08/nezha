@@ -12,9 +12,7 @@ This project is built using the [Phaser 3](https://phaser.io/) HTML5 game framew
 
 You can play the latest development build live here:
 
-**[https://grantchen08.github.io/nezha/](https://grantchen08.github.io/)** (Assuming the main page hosts the game, adjust if `game.html` is still the direct link)
-
-*Note: The previous link pointed to `game.html`. If that's still the correct link, please use: [https://grantchen08.github.io/nezha/game.html](https://grantchen08.github.io/nezha/game.html)*
+**[https://grantchen08.github.io/nezha/](https://grantchen08.github.io/nezha)**
 
 ## Current Demo Features
 
