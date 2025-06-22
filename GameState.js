@@ -46,4 +46,9 @@ function endGame(message, color = '#ffffff') {
     [this.playerBarrack, this.aiBarrack].forEach(barrack => { if (barrack && barrack.active) { if (barrack.trainingTimer) barrack.trainingTimer.remove(); this.destroyTrainingText(barrack); barrack.isTraining = false; } });
     if (this.trees) { this.trees.getChildren().forEach(tree => this.destroyTreeHealthBar(tree)); }
     console.log("Game Over:", message);
+
+    // Pause for 5 seconds and then reload the page
+    setTimeout(() => {
+        window.location.reload();
+    }, 5000);
 }
