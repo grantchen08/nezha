@@ -1,107 +1,93 @@
 /**
  * Creates health bar graphics for a given unit.
+ * NOTE: This is now being deprecated in favor of Entity-managed health bars.
+ * It's kept for objects that have not yet been converted to the Entity class.
  */
-  function createHealthBar(unit, barWidth, barColor) {
-  if (!unit) return;
-  const unitHeight = unit.displayHeight || unit.height || 64;
-  const initialYOffset = -unitHeight - 5;
-  const x = unit.x; const y = unit.y + initialYOffset;
-  if (unit.healthBarBg) unit.healthBarBg.destroy(); if (unit.healthBarFill) unit.healthBarFill.destroy();
-  unit.healthBarBg = this.add.rectangle(x, y, barWidth, HEALTH_BAR_HEIGHT, 0x333333).setOrigin(0.5);
-  unit.healthBarFill = this.add.rectangle(x - barWidth / 2, y, barWidth, HEALTH_BAR_HEIGHT, barColor).setOrigin(0, 0.5);
-  unit.healthBarWidth = barWidth;
-  if (unit.healthBarBg) unit.healthBarBg.setDepth(unit.depth + 1); if (unit.healthBarFill) unit.healthBarFill.setDepth(unit.depth + 2);
-  this.updateHealthBar(unit);
-  }
+function createHealthBar(unit, barWidth, barColor) {
+    if (!unit) return;
+    const unitHeight = unit.displayHeight || unit.height || 64;
+    const initialYOffset = -unitHeight - 5;
+    const x = unit.x; const y = unit.y + initialYOffset;
+    if (unit.healthBarBg) unit.healthBarBg.destroy(); if (unit.healthBarFill) unit.healthBarFill.destroy();
+    unit.healthBarBg = this.add.rectangle(x, y, barWidth, HEALTH_BAR_HEIGHT, 0x333333).setOrigin(0.5);
+    unit.healthBarFill = this.add.rectangle(x - barWidth / 2, y, barWidth, HEALTH_BAR_HEIGHT, barColor).setOrigin(0, 0.5);
+    unit.healthBarWidth = barWidth;
+    if (unit.healthBarBg) unit.healthBarBg.setDepth(unit.depth + 1); if (unit.healthBarFill) unit.healthBarFill.setDepth(unit.depth + 2);
+    this.updateHealthBar(unit);
+}
 
 /**
  * Creates a temporary health bar for the tree being cut.
+ * DEPRECATED: Trees now manage their own health bars via the Entity class.
  */
-function createTreeHealthBar(tree) {
-  if (!tree || !tree.active || tree.healthBarBg) return;
-  const barWidth = 40; const yOffset = -tree.displayHeight - 5;
-  const x = tree.x; const y = tree.y + yOffset;
-  tree.healthBarBg = this.add.rectangle(x, y, barWidth, HEALTH_BAR_HEIGHT, 0x333333).setOrigin(0.5);
-  tree.healthBarFill = this.add.rectangle(x - barWidth / 2, y, barWidth, HEALTH_BAR_HEIGHT, 0xffffff).setOrigin(0, 0.5);
-  tree.healthBarWidth = barWidth;
-  if (tree.healthBarBg) tree.healthBarBg.setDepth(tree.depth + 1); if (tree.healthBarFill) tree.healthBarFill.setDepth(tree.depth + 2);
-  this.updateTreeHealthBar(tree);
-}
+// function createTreeHealthBar(tree) { ... }
 
-  /**
-   * Updates the position and fill of a specific tree's health bar.
-   */
-  function updateTreeHealthBar(tree) {
-  if (!tree || !tree.active || !tree.healthBarBg || !tree.healthBarFill) { this.destroyTreeHealthBar(tree); return; }
-  const barWidth = tree.healthBarWidth; const yOffset = -tree.displayHeight - 5;
-  const x = tree.x; const y = tree.y + yOffset;
-  tree.healthBarBg.setPosition(x, y); tree.healthBarFill.setPosition(x - barWidth / 2, y);
-  const fillWidth = Math.max(0, (tree.health / tree.maxHealth) * barWidth);
-  tree.healthBarFill.width = fillWidth;
-  tree.healthBarBg.setDepth(tree.depth + 1); tree.healthBarFill.setDepth(tree.depth + 2);
-  }
+
+/**
+ * Updates the position and fill of a specific tree's health bar.
+ * DEPRECATED: Trees now manage their own health bars via the Entity class.
+ */
+// function updateTreeHealthBar(tree) { ... }
 
 /**
  * Destroys the health bar associated with a specific tree.
+ * DEPRECATED: Trees now manage their own health bars via the Entity class.
  */
-function destroyTreeHealthBar(tree) {
-  if (tree) {
-      if (tree.healthBarBg) { tree.healthBarBg.destroy(); tree.healthBarBg = null; }
-      if (tree.healthBarFill) { tree.healthBarFill.destroy(); tree.healthBarFill = null; }
-  }
-}
+// function destroyTreeHealthBar(tree) { ... }
 
 
 /**
  * Updates the position and fill of a unit's health bar.
+ * NOTE: This is now being deprecated in favor of Entity-managed health bars.
  */
 function updateHealthBar(unit) {
-  if (!unit || !unit.active || !unit.healthBarBg || !unit.healthBarFill || !unit.healthBarBg.active || !unit.healthBarFill.active) { this.destroyHealthBar(unit); return; }
-  const barWidth = unit.healthBarWidth; const unitHeight = unit.displayHeight || unit.height || 64;
-  const yOffset = -unitHeight - 5; const x = unit.x; const y = unit.y + yOffset;
-  unit.healthBarBg.setPosition(x, y); unit.healthBarFill.setPosition(x - barWidth / 2, y);
-  const currentHealth = typeof unit.health === 'number' ? unit.health : 0;
-  const maxHealth = typeof unit.maxHealth === 'number' && unit.maxHealth > 0 ? unit.maxHealth : 1;
-  const fillRatio = Math.max(0, Math.min(1, currentHealth / maxHealth));
-  const fillWidth = fillRatio * barWidth; unit.healthBarFill.width = fillWidth;
-  }
+    if (!unit || !unit.active || !unit.healthBarBg || !unit.healthBarFill || !unit.healthBarBg.active || !unit.healthBarFill.active) { this.destroyHealthBar(unit); return; }
+    const barWidth = unit.healthBarWidth; const unitHeight = unit.displayHeight || unit.height || 64;
+    const yOffset = -unitHeight - 5; const x = unit.x; const y = unit.y + yOffset;
+    unit.healthBarBg.setPosition(x, y); unit.healthBarFill.setPosition(x - barWidth / 2, y);
+    const currentHealth = typeof unit.health === 'number' ? unit.health : 0;
+    const maxHealth = typeof unit.maxHealth === 'number' && unit.maxHealth > 0 ? unit.maxHealth : 1;
+    const fillRatio = Math.max(0, Math.min(1, currentHealth / maxHealth));
+    const fillWidth = fillRatio * barWidth; unit.healthBarFill.width = fillWidth;
+}
 
-  /**
-   * Destroys the health bar associated with any unit/building.
-   */
-  function destroyHealthBar(unit) {
-  if (unit) { if (unit.healthBarBg) { unit.healthBarBg.destroy(); unit.healthBarBg = null; } if (unit.healthBarFill) { unit.healthBarFill.destroy(); unit.healthBarFill = null; } }
-  }
+/**
+ * Destroys the health bar associated with any unit/building.
+ * NOTE: This is now being deprecated in favor of Entity-managed health bars.
+ */
+function destroyHealthBar(unit) {
+    if (unit) { if (unit.healthBarBg) { unit.healthBarBg.destroy(); unit.healthBarBg = null; } if (unit.healthBarFill) { unit.healthBarFill.destroy(); unit.healthBarFill = null; } }
+}
 
-  /**
-   * Creates a training progress text bubble for a barrack.
-   */
-  function createTrainingText(barrack) {
-  if (!barrack || !barrack.active || barrack.trainingText) return;
-  this.logDebug("Creating training text..."); this.destroyTrainingText(barrack);
-  barrack.trainingText = this.add.text(0, 0, '0%', TRAINING_TEXT_STYLE).setOrigin(0.5, 1);
-  if (!barrack.trainingText) { this.logDebug("ERROR: Failed to create text object!"); return; }
-  this.updateTrainingText(barrack); this.logDebug("Training text created.");
-  }
+/**
+ * Creates a training progress text bubble for a barrack.
+ */
+function createTrainingText(barrack) {
+    if (!barrack || !barrack.active || barrack.trainingText) return;
+    this.logDebug("Creating training text..."); this.destroyTrainingText(barrack);
+    barrack.trainingText = this.add.text(0, 0, '0%', TRAINING_TEXT_STYLE).setOrigin(0.5, 1);
+    if (!barrack.trainingText) { this.logDebug("ERROR: Failed to create text object!"); return; }
+    this.updateTrainingText(barrack); this.logDebug("Training text created.");
+}
 
-  /**
-   * Updates the position and content of a barrack's training text bubble.
-   */
-  function updateTrainingText(barrack) {
-  if (!barrack || !barrack.active || !barrack.isTraining || !barrack.trainingText || !barrack.trainingText.active) { this.destroyTrainingText(barrack); return; }
-  if (!barrack.trainingTimer) return;
-  const text = barrack.trainingText; const unitHeight = barrack.displayHeight || barrack.height || 64;
-  const yOffset = -unitHeight - 5 - HEALTH_BAR_HEIGHT - 5; const x = barrack.x; const y = barrack.y + yOffset;
-  text.setPosition(x, y); const progress = barrack.trainingTimer.getProgress(); const percent = Math.floor(progress * 100);
-  text.setText(percent + '%');
-  }
+/**
+ * Updates the position and content of a barrack's training text bubble.
+ */
+function updateTrainingText(barrack) {
+    if (!barrack || !barrack.active || !barrack.isTraining || !barrack.trainingText || !barrack.trainingText.active) { this.destroyTrainingText(barrack); return; }
+    if (!barrack.trainingTimer) return;
+    const text = barrack.trainingText; const unitHeight = barrack.displayHeight || barrack.height || 64;
+    const yOffset = -unitHeight - 5 - HEALTH_BAR_HEIGHT - 5; const x = barrack.x; const y = barrack.y + yOffset;
+    text.setPosition(x, y); const progress = barrack.trainingTimer.getProgress(); const percent = Math.floor(progress * 100);
+    text.setText(percent + '%');
+}
 
-  /**
-   * Destroys the training text bubble associated with a barrack.
-   */
-  function destroyTrainingText(barrack) {
-  if (barrack && barrack.trainingText && barrack.trainingText.active) { barrack.trainingText.destroy(); barrack.trainingText = null; }
-  }
+/**
+ * Destroys the training text bubble associated with a barrack.
+ */
+function destroyTrainingText(barrack) {
+    if (barrack && barrack.trainingText && barrack.trainingText.active) { barrack.trainingText.destroy(); barrack.trainingText = null; }
+}
 
 /**
  * Helper function to update the spearman's thought bubble text.
@@ -167,6 +153,8 @@ function updateSpearmanThoughtBubble(spearman, forceSelected = false) {
 
 /**
  * Attached to Sprite/Image prototype. Handles taking damage, visual effects, and death.
+ * DEPRECATED: This logic is being moved into the Entity class.
+ * It is kept for now for objects that have not yet been converted.
  */
 const takeDamage = function(amount, attacker) { // 'attacker' is the unit dealing damage
     if (!this.active || this.health <= 0 || !this.scene) return; // Already dead/inactive or scene gone

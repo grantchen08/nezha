@@ -1,15 +1,16 @@
 /**
  * Damages the tree currently being cut by the specified worker.
+ * REFACTORED: Now calls the tree's own takeDamage method.
  */
-  function damageTree(workerSprite) {
-  if (!this.gameStarted || this.gameOver || !workerSprite || !workerSprite.isCutting || !workerSprite.cuttingTarget || !workerSprite.cuttingTarget.active) { this.stopCutting(workerSprite); return; }
-  const tree = workerSprite.cuttingTarget; tree.health -= 1;
-  this.updateTreeHealthBar(tree);
-  if (tree.health <= 0) { this.cutTree(tree, workerSprite); }
-  else if (tree.health <= 3.3) { tree.setFrame(2); }
-  else if (tree.health <= 6.6) { tree.setFrame(1); }
-  else { tree.setFrame(0); }
-  }
+function damageTree(workerSprite) {
+    if (!this.gameStarted || this.gameOver || !workerSprite || !workerSprite.isCutting || !workerSprite.cuttingTarget || !workerSprite.cuttingTarget.active) {
+        this.stopCutting(workerSprite);
+        return;
+    }
+    const tree = workerSprite.cuttingTarget;
+    // The Tree object now handles its own damage, frame changes, and death.
+    tree.takeDamage(1, workerSprite); 
+}
 
 /**
  * Stops the current cutting process for a specific worker.
@@ -33,30 +34,21 @@
               else if (workerSprite === this.aiWorker) { this.aiWood += woodGained; this.aiWoodText.setText('AI Wood: ' + this.aiWood); this.logDebug(`AI stopped chopping. Gained ${woodGained} wood (partial).`); }
               this.checkEndCondition();
           } else { this.logDebug(`Stopped chopping. No partial wood gained.`); }
-          this.updateTreeHealthBar(treeToStopCutting);
+          // The tree's health bar is now managed by its own preUpdate
       }
-      let otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
-      if (!otherWorker || !otherWorker.active || !otherWorker.isCutting || otherWorker.cuttingTarget !== treeToStopCutting) this.destroyTreeHealthBar(treeToStopCutting);
-  } else if (treeToStopCutting) {
-      let otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
-      if (!otherWorker || !otherWorker.active || !otherWorker.isCutting || otherWorker.cuttingTarget !== treeToStopCutting) this.destroyTreeHealthBar(treeToStopCutting);
   }
-  }
+}
 
 
 /**
  * Finalizes cutting the tree, adds wood, removes tree, checks end condition.
+ * NOTE: This function is now effectively replaced by Tree.die() but is kept for reference during transition.
+ * The core logic has moved to Tree.js.
  */
 function cutTree(tree, workerSprite) {
-  this.stopCutting(workerSprite);
-  if (!tree || !workerSprite) { console.warn("Attempted to cut tree with invalid tree or worker."); this.destroyTreeHealthBar(tree); if(workerSprite) workerSprite.state = 'chopping'; return; }
-  const woodFromFelledTree = 10;
-  if (workerSprite === this.worker) { this.wood += woodFromFelledTree; this.woodText.setText('Wood: ' + this.wood); this.logDebug(`Tree felled! Gained ${woodFromFelledTree} wood. Total: ${this.wood}`); }
-  else if (workerSprite === this.aiWorker) { this.aiWood += woodFromFelledTree; this.aiWoodText.setText('AI Wood: ' + this.aiWood); this.logDebug(`AI felled tree. Gained ${woodFromFelledTree} wood. Total: ${this.aiWood}`); }
-  workerSprite.isCutting = false; workerSprite.cuttingTarget = null; workerSprite.initialChopHealth = null; workerSprite.state = 'chopping';
-  workerSprite.setTexture('worker_sheet'); workerSprite.anims.stop(); workerSprite.setFrame(0); workerSprite.setFlipX(false);
-  this.destroyTreeHealthBar(tree); this.trees.remove(tree, true, true);
-  this.checkEndCondition();
+    // This logic is now handled inside Tree.js in the die() method.
+    // The call to tree.takeDamage() will trigger this when the tree's health is <= 0.
+    console.warn("cutTree() is deprecated and should not be called directly.");
 }
 
 /**
@@ -148,7 +140,7 @@ function sendWorkerToTree(workerSprite, tree) {
           }
         workerSprite.state = 'chopping'; workerSprite.isCutting = true; workerSprite.cuttingTarget = actualTree; workerSprite.initialChopHealth = actualTree.health;
         this.logDebug(`${workerId} reached tree. Starting cut (H:${actualTree.health})`);
-        this.createTreeHealthBar(actualTree);
+        // The tree now manages its own health bar, so we don't create one here.
         workerSprite.setFlipX(!faceRightOnArrival); workerSprite.setTexture('worker_chop_sheet'); workerSprite.anims.play('worker_chop', true);
           if (this.chopSound && !this.chopSound.isPlaying) { let otherWorkerBusy = otherWorker && otherWorker.active && (otherWorker.isCutting || otherWorker.isBuilding); if (!otherWorkerBusy) this.chopSound.play({ loop: true }); }
         workerSprite.cuttingTimer = this.time.addEvent({ delay: 1000, callback: () => this.damageTree(workerSprite), callbackScope: this, loop: true });

@@ -172,7 +172,8 @@ class DemoScene extends Phaser.Scene {
     this.anims.create({ key: 'spearman_walk', frames: this.anims.generateFrameNumbers('spearman_walk_sheet', { start: 0, end: 1 }), frameRate: 6, repeat: -1 });
     this.anims.create({ key: 'spearman_attack', frames: this.anims.generateFrameNumbers('spearman_attack_sheet', { start: 0, end: 1 }), frameRate: 4, repeat: -1 });
 
-    // --- Tree Setup ---
+    // --- Tree Setup (REFACTORED) ---
+    // We still use a group for easy management, but now it's populated with our new Tree class instances.
     this.trees = this.add.group();
     const treeCount = 20;
     for (let i = 0; i < treeCount; i++) {
@@ -184,9 +185,10 @@ class DemoScene extends Phaser.Scene {
             const houseRadius = Math.max(this.house.width, this.house.height) / 2 + 36;
             tooClose = (playerHouseDist < houseRadius * 1.5) || (aiHouseDist < houseRadius * 1.5);
         } while (tooClose);
-        let tree = this.add.sprite(x, y, 'tree_sheet').setOrigin(0.5, 1);
-        tree.setFrame(0); tree.health = 10; tree.maxHealth = 10;
-        this.trees.add(tree); tree.setInteractive();
+
+        // Instantiate the new Tree class instead of a generic sprite
+        const tree = new Tree(this, x, y);
+        this.trees.add(tree); 
     }
 
       // --- Input Handling ---
@@ -226,11 +228,14 @@ class DemoScene extends Phaser.Scene {
           this.worker, this.aiWorker,
           this.house, this.aiHouse,
           this.playerBarrack, this.aiBarrack, // Include barracks
-          ...this.playerSpearmen, ...this.aiSpearmen
+          ...this.playerSpearmen, ...this.aiSpearmen,
+          ...this.trees.getChildren() // Also check trees for FoW updates
       ];
       allVisibleEntities.forEach(entity => {
           if (entity && entity.active) {
-              this.updateVisibilityAround(entity); // Reveals based on owner's perspective
+              // For now, assume all trees are neutral and can reveal FoW for both
+              // In a real scenario, you might want only player units to reveal FoW.
+              this.updateVisibilityAround(entity);
           }
       });
 
@@ -256,12 +261,19 @@ class DemoScene extends Phaser.Scene {
       if (this.aiBarrack && this.aiBarrack.active) depthSortedSprites.push(this.aiBarrack);
       this.playerSpearmen.forEach(s => { if (s.active) depthSortedSprites.push(s); });
       this.aiSpearmen.forEach(s => { if (s.active) depthSortedSprites.push(s); });
-      if (this.trees) { this.trees.getChildren().forEach(tree => { if (tree.active) { depthSortedSprites.push(tree); if(tree.healthBarBg) this.updateTreeHealthBar(tree); } else { this.destroyTreeHealthBar(tree); } }); }
+      // The Tree objects (and their health bars) are now updated automatically by Phaser's `preUpdate`
+      if (this.trees) { this.trees.getChildren().forEach(tree => { if (tree.active) { depthSortedSprites.push(tree); } }); }
+      
       depthSortedSprites.sort((a, b) => { const yA = a.y; const yB = b.y; if (yA < yB) return -1; if (yA > yB) return 1; return 0; });
       depthSortedSprites.forEach((sprite, index) => {
           if (sprite.active) {
               sprite.setDepth(index);
-              if (sprite.healthBarBg) { this.updateHealthBar(sprite); sprite.healthBarBg.setDepth(index + 1); sprite.healthBarFill.setDepth(index + 2); }
+              // Health bars for non-Entity objects still need manual updates
+              if (sprite.getData('unitType') !== 'tree' && sprite.healthBarBg) { 
+                  this.updateHealthBar(sprite); 
+                  sprite.healthBarBg.setDepth(index + 1); 
+                  sprite.healthBarFill.setDepth(index + 2); 
+              }
               if (sprite.trainingText) { this.updateTrainingText(sprite); sprite.trainingText.setDepth(index + 10); }
               // Update goal text position and depth
               if (sprite.goalText && sprite.getData('unitType') === 'spearman' && sprite.goalText.active) {

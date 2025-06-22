@@ -26,10 +26,10 @@ Object.assign(DemoScene.prototype, {
 
     // From Visuals.js
      createHealthBar, updateHealthBar, destroyHealthBar,
-     createTreeHealthBar, updateTreeHealthBar, destroyTreeHealthBar,
+     // createTreeHealthBar, updateTreeHealthBar, destroyTreeHealthBar, // DEPRECATED
      createTrainingText, updateTrainingText, destroyTrainingText,
      updateSpearmanThoughtBubble,
-     // Note: takeDamage is handled separately below
+     // Note: takeDamage is now part of the Entity class
 
     // From Utilities.js
     logDebug, isPositionOccupied, findNearbyEmptyPosition, startUnitMove,
@@ -38,9 +38,10 @@ Object.assign(DemoScene.prototype, {
     startGameLogic, checkEndCondition, endGame
 });
 
-// --- Special Handling for takeDamage ---
-// It needs to be attached to the GameObject prototypes, not the Scene prototype.
-// Ensure Visuals.js (where takeDamage is defined) is loaded before this.
+// --- Special Handling for takeDamage (REFACTORED) ---
+// We no longer attach takeDamage to the global prototypes.
+// Instead, it's a method on the Entity class.
+// We keep it for non-Entity objects for now.
 Phaser.GameObjects.Sprite.prototype.takeDamage = takeDamage;
 Phaser.GameObjects.Image.prototype.takeDamage = takeDamage;
 
