@@ -51,43 +51,43 @@ function updateHealthBar(unit) {
     const fillWidth = fillRatio * barWidth; unit.healthBarFill.width = fillWidth;
 }
 
-/**
- * Destroys the health bar associated with any unit/building.
- * NOTE: This is now being deprecated in favor of Entity-managed health bars.
- */
-function destroyHealthBar(unit) {
-    if (unit) { if (unit.healthBarBg) { unit.healthBarBg.destroy(); unit.healthBarBg = null; } if (unit.healthBarFill) { unit.healthBarFill.destroy(); unit.healthBarFill = null; } }
-}
+  /**
+   * Destroys the health bar associated with any unit/building.
+   * NOTE: This is now being deprecated in favor of Entity-managed health bars.
+   */
+  function destroyHealthBar(unit) {
+  if (unit) { if (unit.healthBarBg) { unit.healthBarBg.destroy(); unit.healthBarBg = null; } if (unit.healthBarFill) { unit.healthBarFill.destroy(); unit.healthBarFill = null; } }
+  }
 
-/**
- * Creates a training progress text bubble for a barrack.
- */
-function createTrainingText(barrack) {
-    if (!barrack || !barrack.active || barrack.trainingText) return;
-    this.logDebug("Creating training text..."); this.destroyTrainingText(barrack);
-    barrack.trainingText = this.add.text(0, 0, '0%', TRAINING_TEXT_STYLE).setOrigin(0.5, 1);
-    if (!barrack.trainingText) { this.logDebug("ERROR: Failed to create text object!"); return; }
-    this.updateTrainingText(barrack); this.logDebug("Training text created.");
-}
+  /**
+   * Creates a training progress text bubble for a barrack.
+   */
+  function createTrainingText(barrack) {
+  if (!barrack || !barrack.active || barrack.trainingText) return;
+  this.logDebug("Creating training text..."); this.destroyTrainingText(barrack);
+  barrack.trainingText = this.add.text(0, 0, '0%', TRAINING_TEXT_STYLE).setOrigin(0.5, 1);
+  if (!barrack.trainingText) { this.logDebug("ERROR: Failed to create text object!"); return; }
+  this.updateTrainingText(barrack); this.logDebug("Training text created.");
+  }
 
-/**
- * Updates the position and content of a barrack's training text bubble.
- */
-function updateTrainingText(barrack) {
-    if (!barrack || !barrack.active || !barrack.isTraining || !barrack.trainingText || !barrack.trainingText.active) { this.destroyTrainingText(barrack); return; }
-    if (!barrack.trainingTimer) return;
-    const text = barrack.trainingText; const unitHeight = barrack.displayHeight || barrack.height || 64;
-    const yOffset = -unitHeight - 5 - HEALTH_BAR_HEIGHT - 5; const x = barrack.x; const y = barrack.y + yOffset;
-    text.setPosition(x, y); const progress = barrack.trainingTimer.getProgress(); const percent = Math.floor(progress * 100);
-    text.setText(percent + '%');
-}
+  /**
+   * Updates the position and content of a barrack's training text bubble.
+   */
+  function updateTrainingText(barrack) {
+  if (!barrack || !barrack.active || !barrack.isTraining || !barrack.trainingText || !barrack.trainingText.active) { this.destroyTrainingText(barrack); return; }
+  if (!barrack.trainingTimer) return;
+  const text = barrack.trainingText; const unitHeight = barrack.displayHeight || barrack.height || 64;
+  const yOffset = -unitHeight - 5 - HEALTH_BAR_HEIGHT - 5; const x = barrack.x; const y = barrack.y + yOffset;
+  text.setPosition(x, y); const progress = barrack.trainingTimer.getProgress(); const percent = Math.floor(progress * 100);
+  text.setText(percent + '%');
+  }
 
-/**
- * Destroys the training text bubble associated with a barrack.
- */
-function destroyTrainingText(barrack) {
-    if (barrack && barrack.trainingText && barrack.trainingText.active) { barrack.trainingText.destroy(); barrack.trainingText = null; }
-}
+  /**
+   * Destroys the training text bubble associated with a barrack.
+   */
+  function destroyTrainingText(barrack) {
+  if (barrack && barrack.trainingText && barrack.trainingText.active) { barrack.trainingText.destroy(); barrack.trainingText = null; }
+  }
 
 /**
  * Helper function to update the spearman's thought bubble text.
@@ -153,8 +153,6 @@ function updateSpearmanThoughtBubble(spearman, forceSelected = false) {
 
 /**
  * Attached to Sprite/Image prototype. Handles taking damage, visual effects, and death.
- * DEPRECATED: This logic is being moved into the Entity class.
- * It is kept for now for objects that have not yet been converted.
  */
 const takeDamage = function(amount, attacker) { // 'attacker' is the unit dealing damage
     if (!this.active || this.health <= 0 || !this.scene) return; // Already dead/inactive or scene gone
@@ -200,32 +198,19 @@ const takeDamage = function(amount, attacker) { // 'attacker' is the unit dealin
     // --- End Show Damage Text ---
 
     // --- Retaliation Logic ---
-    // Check if this unit is a spearman, was actually damaged, and the attacker is a valid enemy
+    // A spearman will always retaliate when attacked, unless it's already attacking the same unit.
     if (this.getData('unitType') === 'spearman' && this.health < previousHealth && attacker && attacker.active && attacker.getData('isPlayer') !== this.getData('isPlayer')) {
-        // Check if the spearman is NOT currently following a direct player move command ('moving_to_idle')
-        // or already attacking/moving to attack the unit that just hit it.
-        // Also check if the spearman's goal is not 'defend' and currently returning to base (state 'moving_to_defend_pos')
-        const isUnderPlayerMoveOrder = (this.state === 'moving_to_idle');
-        const isTargetingAttacker = (this.state === 'attacking' && this.attackTarget === attacker) || (this.state === 'moving_to_attack' && this.target === attacker);
-        const isReturningToDefend = (this.goal === 'defend' && this.state === 'moving_to_defend_pos');
+        const isAlreadyTargetingAttacker = (this.state === 'attacking' && this.attackTarget === attacker);
 
-        if (!isUnderPlayerMoveOrder && !isTargetingAttacker && !isReturningToDefend) {
-            this.scene.logDebug(`${this.getData('isPlayer') ? 'Player' : 'AI'} spearman (Goal: ${this.goal}) retaliating against ${attacker.getData('unitType')}`);
-            // Stop current action
+        if (!isAlreadyTargetingAttacker) {
+            this.scene.logDebug(`${this.getData('isPlayer') ? 'Player' : 'AI'} spearman is retaliating!`);
+            
+            // Stop whatever it was doing
             if (this.isAttacking) this.scene.stopAttacking(this);
-            if (this.moving) {
-                this.scene.tweens.killTweensOf(this);
-                this.moving = false;
-                // Reset visual state if interrupted mid-move
-                this.setTexture('spearman_walk_sheet');
-                this.anims.stop();
-                this.setFrame(0);
-                this.setFlipX(!this.getData('isPlayer'));
-            }
-            // Attack back
+            if (this.moving) this.scene.tweens.killTweensOf(this);
+            
+            // Immediately attack the new threat
             this.scene.sendSpearmanToAttack(this, attacker);
-        } else if (isReturningToDefend) {
-             this.scene.logDebug(`${this.getData('isPlayer') ? 'Player' : 'AI'} spearman (Goal: ${this.goal}) under attack while returning to defend. Ignoring retaliation.`);
         }
     }
     // --- End Retaliation Logic ---

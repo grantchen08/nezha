@@ -73,9 +73,11 @@ function findClosestEnemyTarget(unit) {
   let minDistanceSq = Infinity;
 
   potentialTargets.forEach(target => {
-      // --- Visibility Check (using the *searching unit's* perspective) ---
+      // --- Visibility Check (BUG FIX) ---
+      // Both Player and AI must now respect their own Fog of War to find a target.
+      // This forces the AI to scout if it cannot see any enemies.
       const { gridX, gridY } = this.worldToGrid(target.x, target.y);
-      if (!this.isCellRevealed(gridX, gridY, isPlayerUnit)) { // Check visibility from the unit's perspective
+      if (!this.isCellRevealed(gridX, gridY, isPlayerUnit)) {
           return; // Skip this target, it's in the fog for the searching unit
       }
       // --- End Visibility Check ---
@@ -178,7 +180,8 @@ function stopAttacking(spearman) {
   if (!spearman || !spearman.isAttacking) return;
   // const side = spearman.getData('isPlayer') ? 'Player' : 'AI'; // No need to log here, logged in start/damage
   if (spearman.attackTimer) { spearman.attackTimer.remove(false); spearman.attackTimer = null; }
-  spearman.isAttacking = false; spearman.attackTarget = null;
+  spearman.isAttacking = false;
+  spearman.attackTarget = null;
   if (this.spearmanAttackSound && this.spearmanAttackSound.isPlaying) {
       // Only stop sound if no other spearmen are attacking
       const anyOtherAttacking = [...this.playerSpearmen, ...this.aiSpearmen].some(s => s.active && s !== spearman && s.isAttacking);

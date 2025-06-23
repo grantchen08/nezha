@@ -1,54 +1,48 @@
 /**
  * Represents the main scene for the RTS demo.
  * Handles game logic, asset loading, and rendering.
- * Core lifecycle methods. Helper methods are attached via prototype in main.js.
  */
 class DemoScene extends Phaser.Scene {
   constructor() {
     super({ key: 'DemoScene' });
     // Game state variables
-    this.wood = 0; // Player's wood count
-    this.aiWood = 0; // AI's wood count
-    this.worker = null; // The player-controlled worker sprite
-    this.house = null; // The player house (now a TownCenter object)
-    this.aiHouse = null; // AI house (now a TownCenter object)
-    this.aiWorker = null; // AI worker sprite
-    this.trees = null; // Group containing Tree objects
-    this.playerBarrack = null; // Reference to the player's Barrack object
-    this.playerBarrackBuilding = false; // Flag: Is the player barrack currently under construction?
-    this.aiBarrack = null; // Reference to the AI's Barrack object
-    this.aiBarrackBuilding = false; // Flag: Is the AI barrack currently under construction?
-    this.playerSpearmen = []; // Array for player spearmen
-    this.aiSpearmen = []; // Array for AI spearmen
-    this.woodText = null; // Text object to display player wood count
-    this.aiWoodText = null; // Text object to display AI wood count
-    this.debugText = null; // Text object for displaying debug messages
-    this.workerWalkSound = null; // Sound effect for worker walking
-    this.chopSound = null; // Sound effect for chopping / building
-    this.spearmanAttackSound = null; // Sound effect for spearman attacking
-    this.unitDieSound = null; // Sound effect for unit death
-    this.buildingFallSound = null; // Sound effect for building destruction
-    this.gameStarted = false; // Flag to prevent logic running before start
-    this.gameOver = false; // Flag to prevent multiple end game calls
-    this.selectedWorker = null; // Keep track of the selected worker
-    this.selectedSpearman = null; // Keep track of the selected spearman
-    this.objectClickedRecently = false; // Flag to prevent immediate background click after object click
-    this.debugHistory = []; // Array to store debug message history
-    this.maxDebugHistory = 10; // Max number of debug messages to keep
-
-    // Fog of War properties
-    this.playerFogGrid = null; // Player's visibility data
-    this.aiFogGrid = null;     // AI's visibility data
-    this.gridWidth = 0;        // Number of cells horizontally
-    this.gridHeight = 0;       // Number of cells vertically
-    this.fogRects = null;      // 2D array storing references to the player's visual fog rectangles
+    this.wood = 0;
+    this.aiWood = 0;
+    this.worker = null; // Player's Worker object
+    this.aiWorker = null; // AI's Worker object
+    this.house = null; 
+    this.aiHouse = null;
+    this.trees = null;
+    this.playerBarrack = null;
+    this.playerBarrackBuilding = false;
+    this.aiBarrack = null;
+    this.aiBarrackBuilding = false;
+    this.playerSpearmen = [];
+    this.aiSpearmen = [];
+    this.woodText = null;
+    this.aiWoodText = null;
+    this.debugText = null;
+    this.workerWalkSound = null;
+    this.chopSound = null;
+    this.spearmanAttackSound = null;
+    this.unitDieSound = null;
+    this.buildingFallSound = null;
+    this.gameStarted = false;
+    this.gameOver = false;
+    this.selectedWorker = null;
+    this.selectedSpearman = null;
+    this.objectClickedRecently = false;
+    this.debugHistory = [];
+    this.maxDebugHistory = 10;
+    this.playerFogGrid = null;
+    this.aiFogGrid = null;
+    this.gridWidth = 0;
+    this.gridHeight = 0;
+    this.fogRects = null;
   }
 
-  /**
-   * Preloads game assets (images, spritesheets, audio).
-   */
   preload() {
-    // Load assets (no changes here)
+    // Load assets
     this.load.spritesheet('worker_sheet', 'https://grantchen08.github.io/nezha/worker_walk.png', { frameWidth: 32, frameHeight: 64 });
     this.load.spritesheet('worker_chop_sheet', 'https://grantchen08.github.io/nezha/worker_chop.png', { frameWidth: 64, frameHeight: 64 });
     this.load.image('barrack', 'https://grantchen08.github.io/nezha/barrack.png');
@@ -63,23 +57,17 @@ class DemoScene extends Phaser.Scene {
     this.load.audio('building_fall_sound', 'https://grantchen08.github.io/nezha/fall.mp3');
   }
 
-  /**
-   * Creates game objects and initializes the scene.
-   */
   create() {
     const gameWidth = this.sys.game.config.width;
     const gameHeight = this.sys.game.config.height;
+    this.cameras.main.setBackgroundColor('#228B22');
 
-    this.cameras.main.setBackgroundColor('#228B22'); // Forest green
-
-    // UI Text
     this.wood = 0; this.aiWood = 0;
     this.woodText = this.add.text(10, 10, 'Wood: 0', { font: '16px Arial', fill: '#ffffff' }).setDepth(1000);
     this.aiWoodText = this.add.text(gameWidth - 10, 10, 'AI Wood: 0', { font: '16px Arial', fill: '#ffffff' }).setOrigin(1, 0).setDepth(1000);
     this.debugText = this.add.text(10, 40, 'Debug Output:', { font: '14px Arial', fill: '#ffffff', wordWrap: { width: 200 }, lineSpacing: 4 }).setDepth(1000).setVisible(false);
     this.logDebug("Click overlay to start.");
 
-    // Fog of War Init (no changes)
     this.gridWidth = Math.ceil(gameWidth / FOG_CELL_SIZE);
     this.gridHeight = Math.ceil(gameHeight / FOG_CELL_SIZE);
     this.playerFogGrid = []; this.aiFogGrid = []; this.fogRects = [];
@@ -92,64 +80,40 @@ class DemoScene extends Phaser.Scene {
         }
     }
     
-    // --- REFACTORED: Player & AI House Setup ---
-    // Instantiate the new TownCenter class. Health, data, and health bars are handled internally.
     this.house = new TownCenter(this, 100, gameHeight - 100, true);
     this.updateVisibilityAround(this.house);
 
     this.aiHouse = new TownCenter(this, gameWidth - 100, gameHeight - 100, false);
     this.updateVisibilityAround(this.aiHouse);
 
-    // --- Player & AI Worker Setup (Unchanged for now) ---
-    this.worker = this.add.sprite(150, gameHeight - 150, 'worker_sheet').setOrigin(0.5, 1);
-    this.worker.setFrame(0); this.worker.state = 'idle'; this.worker.moving = false; this.worker.target = null;
-    this.worker.isCutting = false; this.worker.cuttingTarget = null; this.worker.cuttingTimer = null;
-    this.worker.isBuilding = false; this.worker.buildingTarget = null; this.worker.buildingTimer = null;
-    this.worker.health = WORKER_HEALTH; this.worker.maxHealth = WORKER_HEALTH;
-    this.worker.setData('unitType', 'worker'); this.worker.setData('isPlayer', true); this.worker.initialChopHealth = null;
-    this.createHealthBar(this.worker, UNIT_HEALTH_BAR_WIDTH, PLAYER_HEALTH_BAR_COLOR);
+    this.worker = new Worker(this, 150, gameHeight - 150, true);
     this.worker.setInteractive();
     this.updateVisibilityAround(this.worker);
 
-    this.aiWorker = this.add.sprite(gameWidth - 150, gameHeight - 150, 'worker_sheet').setOrigin(0.5, 1);
-    this.aiWorker.setFrame(0); this.aiWorker.state = 'idle'; this.aiWorker.moving = false; this.aiWorker.target = null;
-    this.aiWorker.isCutting = false; this.aiWorker.cuttingTarget = null; this.aiWorker.cuttingTimer = null;
-    this.aiWorker.isBuilding = false; this.aiWorker.buildingTarget = null; this.aiWorker.buildingTimer = null;
-    this.aiWorker.health = WORKER_HEALTH; this.aiWorker.maxHealth = WORKER_HEALTH;
-    this.aiWorker.setData('unitType', 'worker'); this.aiWorker.setData('isPlayer', false); this.aiWorker.initialChopHealth = null;
-    this.createHealthBar(this.aiWorker, UNIT_HEALTH_BAR_WIDTH, AI_HEALTH_BAR_COLOR);
+    this.aiWorker = new Worker(this, gameWidth - 150, gameHeight - 150, false);
     this.aiWorker.setInteractive();
     this.updateVisibilityAround(this.aiWorker);
 
-
-    // Load sounds and animations (no changes)
     this.workerWalkSound = this.sound.add('worker_walk');
     this.chopSound = this.sound.add('chop_sound');
     this.spearmanAttackSound = this.sound.add('spearman_attack_sound');
     this.unitDieSound = this.sound.add('unit_die_sound');
     this.buildingFallSound = this.sound.add('building_fall_sound');
+
     this.anims.create({ key: 'worker_walk', frames: this.anims.generateFrameNumbers('worker_sheet', { start: 0, end: 1 }), frameRate: 8, repeat: -1 });
     this.anims.create({ key: 'worker_chop', frames: this.anims.generateFrameNumbers('worker_chop_sheet', { start: 0, end: 1 }), frameRate: 4, repeat: -1 });
     this.anims.create({ key: 'spearman_walk', frames: this.anims.generateFrameNumbers('spearman_walk_sheet', { start: 0, end: 1 }), frameRate: 6, repeat: -1 });
     this.anims.create({ key: 'spearman_attack', frames: this.anims.generateFrameNumbers('spearman_attack_sheet', { start: 0, end: 1 }), frameRate: 4, repeat: -1 });
 
-    // Tree Setup
     this.trees = this.add.group();
-    const treeCount = 20;
-    for (let i = 0; i < treeCount; i++) {
-        let x, y; let tooClose;
+    for (let i = 0; i < 20; i++) {
+        let x, y;
         do {
             x = Phaser.Math.Between(50, gameWidth - 50); y = Phaser.Math.Between(50, gameHeight - 100);
-            const playerHouseDist = Phaser.Math.Distance.Between(x, y, this.house.x, this.house.y - this.house.height / 2);
-            const aiHouseDist = Phaser.Math.Distance.Between(x, y, this.aiHouse.x, this.aiHouse.y - this.aiHouse.height / 2);
-            const houseRadius = Math.max(this.house.width, this.house.height) / 2 + 36;
-            tooClose = (playerHouseDist < houseRadius * 1.5) || (aiHouseDist < houseRadius * 1.5);
-        } while (tooClose);
-        const tree = new Tree(this, x, y);
-        this.trees.add(tree); 
+        } while (Phaser.Math.Distance.Between(x, y, this.house.x, this.house.y) < 150 || Phaser.Math.Distance.Between(x, y, this.aiHouse.x, this.aiHouse.y) < 150);
+        this.trees.add(new Tree(this, x, y)); 
     }
 
-      // Input and Start Overlay (no changes)
       this.input.on('gameobjectdown', this.handleObjectClick, this);
       this.input.on('pointerdown', this.handleBackgroundClick, this);
       this.input.keyboard.on('keydown-D', this.toggleDebugDisplay, this);
@@ -160,67 +124,170 @@ class DemoScene extends Phaser.Scene {
       } else { this.startGameLogic(); }
   }
 
-
-  /**
-   * Game loop update function. Runs continuously.
-   */
   update(time, delta) {
       if (!this.gameStarted || this.gameOver) return;
 
-      // Fog of War (no changes)
-      const allVisibleEntities = [ this.worker, this.aiWorker, this.house, this.aiHouse, this.playerBarrack, this.aiBarrack, ...this.playerSpearmen, ...this.aiSpearmen, ...this.trees.getChildren() ];
-      allVisibleEntities.forEach(entity => { if (entity && entity.active) { this.updateVisibilityAround(entity); } });
+      const allEntities = [ this.worker, this.aiWorker, this.house, this.aiHouse, this.playerBarrack, this.aiBarrack, ...this.playerSpearmen, ...this.aiSpearmen, ...this.trees.getChildren() ];
+      allEntities.forEach(entity => { if (entity && entity.active) { this.updateVisibilityAround(entity); } });
 
-      // --- Handle States ---
-      if (this.worker && this.worker.active) this.handleWorkerState(this.worker);
-      if (this.aiWorker && this.aiWorker.active) this.handleWorkerState(this.aiWorker);
-      
-      // REFACTORED: Barracks now update themselves
+      if (this.worker && this.worker.active) this.worker.update();
+      if (this.aiWorker && this.aiWorker.active) this.aiWorker.update();
       if (this.playerBarrack && this.playerBarrack.active) this.playerBarrack.update();
       if (this.aiBarrack && this.aiBarrack.active) this.aiBarrack.update();
       
       this.playerSpearmen.forEach(s => { if (s.active) this.handleSpearmanState(s); });
-      this.aiSpearmen.forEach(s => { if (s.active) this.handleSpearmanState(s); });
 
-      // Unit Cleanup
       this.playerSpearmen = this.playerSpearmen.filter(s => s.active);
       this.aiSpearmen = this.aiSpearmen.filter(s => s.active);
 
-      // --- Depth Sorting & Visual Updates ---
-      // Get all active game objects that need to be depth-sorted.
-      const depthSortedSprites = this.trees.getChildren().filter(c => c.active);
-      if (this.worker && this.worker.active) depthSortedSprites.push(this.worker);
-      if (this.aiWorker && this.aiWorker.active) depthSortedSprites.push(this.aiWorker);
-      if (this.house && this.house.active) depthSortedSprites.push(this.house);
-      if (this.aiHouse && this.aiHouse.active) depthSortedSprites.push(this.aiHouse);
-      if (this.playerBarrack && this.playerBarrack.active) depthSortedSprites.push(this.playerBarrack);
-      if (this.aiBarrack && this.aiBarrack.active) depthSortedSprites.push(this.aiBarrack);
-      this.playerSpearmen.forEach(s => { if (s.active) depthSortedSprites.push(s); });
-      this.aiSpearmen.forEach(s => { if (s.active) depthSortedSprites.push(s); });
-      
+      const depthSortedSprites = allEntities.filter(e => e && e.active);
       depthSortedSprites.sort((a, b) => a.y - b.y);
-
       depthSortedSprites.forEach((sprite, index) => {
           if (sprite.active) {
               sprite.setDepth(index);
-              // Manual health bar updates for non-Entity objects (Worker, Spearman for now)
               if (!(sprite instanceof Entity) && sprite.healthBarBg) { 
                   this.updateHealthBar(sprite); 
               }
-              // Goal text for spearmen (unchanged)
               if (sprite.goalText && sprite.getData('unitType') === 'spearman' && sprite.goalText.active) {
                   const yOffset = (sprite.healthBarBg ? sprite.healthBarBg.y - HEALTH_BAR_HEIGHT : sprite.y - sprite.displayHeight) - 10;
                   sprite.goalText.setPosition(sprite.x, yOffset);
-                  sprite.goalText.setDepth(index + 11);
               }
           }
       });
-
-       // Worker target invalidation (unchanged)
-       [this.worker, this.aiWorker].forEach( w => {
-          if (!w || !w.active) return;
-          if (w.moving && w.target && w.state === 'moving_to_chop' && !w.target.active) { this.tweens.killTweensOf(w); }
-          if (w.moving && w.target && w.state === 'moving_to_build' && !w.target.active) { this.tweens.killTweensOf(w); }
-      });
   }
+
+    // --- Worker Logic Helper Methods ---
+    // These functions are now part of the scene and called by Worker instances.
+    damageTree(workerSprite) {
+        if (!this.gameStarted || this.gameOver || !workerSprite.isCutting || !workerSprite.cuttingTarget?.active) {
+            this.stopCutting(workerSprite);
+            return;
+        }
+        workerSprite.cuttingTarget.takeDamage(1, workerSprite);
+    }
+
+    stopCutting(workerSprite) {
+        if (!workerSprite) return;
+        const wasCutting = workerSprite.isCutting;
+        if (workerSprite.cuttingTimer) workerSprite.cuttingTimer.remove();
+        workerSprite.isCutting = false;
+        workerSprite.cuttingTarget = null;
+        if (wasCutting) {
+            const otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
+            if (this.chopSound?.isPlaying && (!otherWorker?.active || !(otherWorker.isCutting || otherWorker.isBuilding))) {
+                this.chopSound.stop();
+            }
+            workerSprite.setTexture('worker_sheet').anims.stop().setFrame(0).setFlipX(false);
+        }
+    }
+
+    findClosestTree(workerSprite) {
+        let closestVisibleTree = null;
+        let minDistance = Infinity;
+        this.trees.getChildren().forEach(tree => {
+            if (!tree.active) return;
+            const { gridX, gridY } = this.worldToGrid(tree.x, tree.y);
+            if (!this.isCellRevealed(gridX, gridY, workerSprite.isPlayer)) return;
+            const otherWorker = workerSprite.isPlayer ? this.aiWorker : this.worker;
+            if (otherWorker?.active && (otherWorker.target === tree || otherWorker.cuttingTarget === tree)) return;
+            const distance = Phaser.Math.Distance.Between(workerSprite.x, workerSprite.y, tree.x, tree.y);
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestVisibleTree = tree;
+            }
+        });
+        return closestVisibleTree;
+    }
+
+    sendWorkerToTree(workerSprite, tree) {
+        if (!tree.active || !workerSprite.active) return;
+        workerSprite.stopAllActions();
+        workerSprite.target = tree;
+        const offset = 30;
+        const targetX = workerSprite.x <= tree.x ? tree.x - offset : tree.x + offset;
+        workerSprite.moveTo(targetX, tree.y, 'moving_to_chop', 'chopping_init');
+    }
+
+    startBuildingBarrack(workerSprite, side = 'player') {
+        const isPlayer = side === 'player';
+        const woodCount = isPlayer ? this.wood : this.aiWood;
+        const existingBarrack = isPlayer ? this.playerBarrack : this.aiBarrack;
+        const isBuildingThisBarrack = isPlayer ? this.playerBarrackBuilding : this.aiBarrackBuilding;
+        const house = isPlayer ? this.house : this.aiHouse;
+        
+        // BUG FIX: Added a null check for 'house' before trying to access its 'active' property.
+        if (!workerSprite.active || !house || !house.active || (existingBarrack && existingBarrack.active) || isBuildingThisBarrack || woodCount < BARRACK_WOOD_COST) return;
+        
+        this.logDebug(`Starting ${side} barrack construction.`);
+        if (isPlayer) { this.playerBarrackBuilding = true; this.wood -= BARRACK_WOOD_COST; this.woodText.setText('Wood: ' + this.wood); }
+        else { this.aiBarrackBuilding = true; this.aiWood -= BARRACK_WOOD_COST; this.aiWoodText.setText('AI Wood: ' + this.aiWood); }
+        workerSprite.stopAllActions();
+        const buildX = isPlayer ? house.x + 80 : house.x - 80;
+        const newBarrack = new Barrack(this, buildX, house.y, isPlayer, true);
+        if (isPlayer) { this.playerBarrack = newBarrack; } else { this.aiBarrack = newBarrack; }
+        this.updateVisibilityAround(newBarrack);
+        workerSprite.target = newBarrack;
+        const offset = 40;
+        const targetXBuild = workerSprite.x <= buildX ? buildX - offset : buildX + offset;
+        workerSprite.moveTo(targetXBuild, house.y, 'moving_to_build', 'building_init'); 
+    }
+    
+    startChoppingAction(workerSprite) {
+        if (!workerSprite.target?.active) {
+            workerSprite.state = 'idle';
+            return;
+        }
+        workerSprite.state = 'chopping';
+        workerSprite.isCutting = true;
+        workerSprite.cuttingTarget = workerSprite.target;
+        workerSprite.setFlipX(workerSprite.x > workerSprite.cuttingTarget.x);
+        workerSprite.setTexture('worker_chop_sheet').play('worker_chop');
+        if (this.chopSound && !this.chopSound.isPlaying) this.chopSound.play({ loop: true });
+        workerSprite.cuttingTimer = this.time.addEvent({ delay: 1000, callback: () => this.damageTree(workerSprite), callbackScope: this, loop: true });
+    }
+    
+    startBuildingAction(workerSprite) {
+        if (!workerSprite.target?.active) {
+            workerSprite.state = 'idle';
+            return;
+        }
+        workerSprite.state = 'building';
+        workerSprite.isBuilding = true;
+        workerSprite.buildingTarget = workerSprite.target;
+        workerSprite.setFlipX(workerSprite.x > workerSprite.buildingTarget.x);
+        workerSprite.setTexture('worker_chop_sheet').play('worker_chop');
+        if (this.chopSound && !this.chopSound.isPlaying) this.chopSound.play({ loop: true });
+        workerSprite.buildingTimer = this.time.addEvent({ delay: 1000, callback: () => this.buildStructure(workerSprite), callbackScope: this, loop: true });
+    }
+
+    buildStructure(workerSprite) {
+        if (this.gameOver || !workerSprite.active || !workerSprite.isBuilding || !workerSprite.buildingTarget.active) {
+            this.stopBuilding(workerSprite);
+            return;
+        }
+        const building = workerSprite.buildingTarget;
+        building.health += 1;
+        building.updateHealthBar();
+        building.setAlpha(0.5 + 0.5 * (building.health / building.maxHealth));
+        if (building.health >= building.maxHealth) {
+            building.completeConstruction();
+            this.stopBuilding(workerSprite);
+            workerSprite.state = 'idle';
+        }
+    }
+
+    stopBuilding(workerSprite) {
+        if (!workerSprite || !workerSprite.isBuilding) return;
+        const wasBuilding = workerSprite.isBuilding;
+        if (workerSprite.buildingTimer) workerSprite.buildingTimer.remove();
+        workerSprite.isBuilding = false;
+        workerSprite.buildingTarget = null;
+        if (wasBuilding) {
+            const otherWorker = (workerSprite === this.worker) ? this.aiWorker : this.worker;
+            if (this.chopSound?.isPlaying && (!otherWorker?.active || !(otherWorker.isCutting || otherWorker.isBuilding))) {
+                this.chopSound.stop();
+            }
+            workerSprite.setTexture('worker_sheet').anims.stop().setFrame(0).setFlipX(false);
+        }
+    }
 }

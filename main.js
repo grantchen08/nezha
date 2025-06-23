@@ -15,18 +15,12 @@ Object.assign(DemoScene.prototype, {
     toggleDebugDisplay,
     changeTimeScale,
 
-    // From WorkerLogic.js
-     damageTree, stopCutting, cutTree, findClosestTree, sendWorkerToTree,
-     startBuildingBarrack, cancelBuilding, buildStructure, stopBuilding, handleWorkerState,
-     handleBarrackTraining, // Moved from combat as it relates to resource/training checks
-
     // From CombatLogic.js
     spawnSpearman, findClosestEnemyTarget, findClosestFriendlyBuilding,
     sendSpearmanToAttack, startAttacking, stopAttacking, damageTarget, handleSpearmanState,
 
     // From Visuals.js
      createHealthBar, updateHealthBar, destroyHealthBar,
-     // createTreeHealthBar, updateTreeHealthBar, destroyTreeHealthBar, // DEPRECATED
      createTrainingText, updateTrainingText, destroyTrainingText,
      updateSpearmanThoughtBubble,
      // Note: takeDamage is now part of the Entity class
@@ -39,9 +33,7 @@ Object.assign(DemoScene.prototype, {
 });
 
 // --- Special Handling for takeDamage (REFACTORED) ---
-// We no longer attach takeDamage to the global prototypes.
-// Instead, it's a method on the Entity class.
-// We keep it for non-Entity objects for now.
+// We only keep it for non-Entity objects (Spearman) during the transition.
 Phaser.GameObjects.Sprite.prototype.takeDamage = takeDamage;
 Phaser.GameObjects.Image.prototype.takeDamage = takeDamage;
 
