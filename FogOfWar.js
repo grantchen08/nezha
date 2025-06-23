@@ -25,10 +25,21 @@ function isCellRevealed(gridX, gridY, isPlayerView) {
  */
 function revealCell(gridX, gridY, isPlayerView) {
     if (gridY < 0 || gridY >= this.gridHeight || gridX < 0 || gridX >= this.gridWidth) return;
+
     const targetGrid = isPlayerView ? this.playerFogGrid : this.aiFogGrid;
+    if (!targetGrid || !targetGrid[gridY]) {
+        console.error(`Fog grid not initialized at Y-index ${gridY}`);
+        return;
+    }
+
     if (targetGrid[gridY][gridX]) return; // Already revealed
+    
     targetGrid[gridY][gridX] = true;
-    if (isPlayerView && this.fogRects[gridY] && this.fogRects[gridY][gridX]) { // Added check for row existence
+    
+    // DEBUG LOGGING
+    // console.log(`Cell (${gridX}, ${gridY}) REVEALED for ${isPlayerView ? "PLAYER" : "AI"}`);
+
+    if (isPlayerView && this.fogRects[gridY] && this.fogRects[gridY][gridX]) {
         this.fogRects[gridY][gridX].setVisible(false);
     }
 }
@@ -40,24 +51,49 @@ function revealCell(gridX, gridY, isPlayerView) {
  */
 function areAllCellsRevealed(isPlayerView) {
     const grid = isPlayerView ? this.playerFogGrid : this.aiFogGrid;
-    if (!grid) return false; // Grid not initialized
+    if (!grid) return false;
     for (let y = 0; y < this.gridHeight; y++) {
         for (let x = 0; x < this.gridWidth; x++) {
             if (!grid[y][x]) {
-                return false; // Found an unrevealed cell
+                return false;
             }
         }
     }
-    return true; // All cells checked and are revealed
+    return true;
 }
 
 
 /**
  * Updates fog visibility around a given game object based on its bounds.
+ * REFACTORED to be more robust for both old sprites and new Entity classes.
  */
 function updateVisibilityAround(gameObject) {
     if (!gameObject || !gameObject.active) return;
-    const isPlayerUnit = gameObject.getData('isPlayer');
+    
+    let isPlayerUnit;
+    let ownerSource = 'none';
+
+    // Check for the property directly on the object first (for new OO classes)
+    if (typeof gameObject.isPlayer === 'boolean') {
+        isPlayerUnit = gameObject.isPlayer;
+        ownerSource = 'property';
+    } 
+    // Fallback to getData for old-style sprites
+    else if (typeof gameObject.getData === 'function' && typeof gameObject.getData('isPlayer') === 'boolean') {
+        isPlayerUnit = gameObject.getData('isPlayer');
+        ownerSource = 'getData';
+    }
+
+    // DEBUG LOGGING
+    const unitId = gameObject.unitType || gameObject.texture.key;
+    console.log(`updateVisibilityAround for [${unitId}] (Source: ${ownerSource}). Determined owner isPlayer: ${isPlayerUnit}`);
+
+
+    // If the object has no owner (isPlayerUnit is undefined, like for a neutral tree), it shouldn't reveal fog.
+    if (typeof isPlayerUnit !== 'boolean') {
+        return; 
+    }
+
     let bounds;
     if (typeof gameObject.getBounds === 'function') {
         bounds = gameObject.getBounds();

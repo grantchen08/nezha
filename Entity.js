@@ -10,6 +10,9 @@ class Entity extends Phaser.GameObjects.Sprite {
         this.maxHealth = config.health;
         this.isPlayer = config.isPlayer || false; // Default to not being a player unit
         this.unitType = config.unitType || 'entity';
+        
+        // **BUG FIX**: Set the 'isPlayer' data for the Fog of War system to use.
+        this.setData('isPlayer', this.isPlayer);
 
         // --- Health Bar Management ---
         // The entity now creates and manages its own health bar.

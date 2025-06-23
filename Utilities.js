@@ -1,6 +1,5 @@
 /**
  * Logs a message to the on-screen debug area, maintaining a history.
- * @param {string} message The message to log.
  */
 function logDebug(message) {
     if (!message) return; // Ignore empty messages
@@ -57,60 +56,47 @@ function findNearbyEmptyPosition(startX, startY, maxRange = 50, excludingUnit = 
  * @param {string} arrivalState - The state to set when the destination is reached (e.g., 'idle', 'attacking').
  */
 function startUnitMove(unit, targetX, targetY, movingState, arrivalState) {
-    // Stop any existing actions ONLY IF initiating a new move (not continuing one)
-    if (!unit.moving) {
-        if (unit.isCutting) this.stopCutting(unit);
-        if (unit.isBuilding) this.stopBuilding(unit);
-        if (unit.isAttacking) this.stopAttacking(unit);
-    }
-    // If already moving, kill the old tween before starting a new one
+    if (!unit || !unit.active) return;
+
     if (unit.moving) {
         this.tweens.killTweensOf(unit);
     }
 
-
-    if (!unit || !unit.active) return; // Check if unit is still valid
-
-    const unitType = unit.getData('unitType');
+    const unitType = unit.getData('unitType') || unit.unitType;
     const side = unit.getData('isPlayer') ? 'Player' : 'AI';
-    unit.state = movingState; // Set the specified moving state
+    unit.state = movingState;
     unit.moving = true;
-    // unit.target is set specifically for move-to-chop/build/attack, not general move
-    if (movingState !== 'moving_to_chop' && movingState !== 'moving_to_build' && movingState !== 'moving_to_attack') {
+
+    // Do NOT clear the target if the unit is moving to perform a targeted action.
+    // The target will be cleared by the action-handling logic itself.
+    if (movingState === 'moving_to_idle' || movingState === 'moving_to_explore') {
         unit.target = null;
     }
-     // Clear attack target unless specifically moving to attack
+
     if (movingState !== 'moving_to_attack') {
         unit.attackTarget = null;
     }
-    // Update bubble when starting move
+    
     if (unitType === 'spearman') this.updateSpearmanThoughtBubble(unit);
 
-
-    // Clamp target to game bounds (just in case)
     targetX = Phaser.Math.Clamp(targetX, 0, this.sys.game.config.width);
     targetY = Phaser.Math.Clamp(targetY, 0, this.sys.game.config.height);
 
     this.logDebug(`${side} ${unitType} moving to (${Math.round(targetX)}, ${Math.round(targetY)}). State: ${movingState} -> ${arrivalState}`);
 
-    const speed = (unitType === 'worker') ? 100 : 80; // Workers move faster
+    const speed = (unitType === 'worker') ? 100 : 80;
     const distance = Phaser.Math.Distance.Between(unit.x, unit.y, targetX, targetY);
-    // Prevent zero duration tweens
     const moveDuration = (distance > 1) ? (distance / speed) * 1000 : 1;
     const animKey = (unitType === 'worker') ? 'worker_walk' : 'spearman_walk';
 
     unit.anims.play(animKey, true);
     if (targetX < unit.x) unit.setFlipX(true); else unit.setFlipX(false);
 
-    // Start walk sound if needed (checking other units)
     if (this.workerWalkSound && !this.workerWalkSound.isPlaying) {
-        let pWorkerMoving = this.worker && this.worker.active && this.worker.moving && this.worker !== unit;
-        let aWorkerMoving = this.aiWorker && this.aiWorker.active && this.aiWorker.moving && this.aiWorker !== unit;
-        let otherSpearmanMoving = this.playerSpearmen.some(s => s.active && s !== unit && s.moving) || this.aiSpearmen.some(s => s.active && s !== unit && s.moving);
-        if (!pWorkerMoving && !aWorkerMoving && !otherSpearmanMoving) this.workerWalkSound.play({ loop: true });
+        let anyOtherUnitMoving = [this.worker, this.aiWorker, ...this.playerSpearmen, ...this.aiSpearmen].some(u => u && u.active && u !== unit && u.moving);
+        if (!anyOtherUnitMoving) this.workerWalkSound.play({ loop: true });
     }
-
-    // Store the original target coordinates for collision check
+    
     const originalTargetX = targetX;
     const originalTargetY = targetY;
 
@@ -121,99 +107,45 @@ function startUnitMove(unit, targetX, targetY, movingState, arrivalState) {
         duration: moveDuration,
         ease: 'Linear',
         onComplete: () => {
-            if (!unit.active) return; // Skip if unit destroyed during move
-
-            // Check if state changed mid-tween (e.g., player command)
+            if (!unit.active) return;
             if (unit.state !== movingState) {
-                 this.logDebug(`${side} ${unitType} move interrupted or state changed during tween. Current state: ${unit.state}`);
-                 unit.moving = false; // Ensure moving flag is cleared
-                 // State already changed, just update bubble
-                 if (unitType === 'spearman') this.updateSpearmanThoughtBubble(unit);
+                 this.logDebug(`${side} ${unitType} move interrupted. Current state: ${unit.state}`);
+                 unit.moving = false;
                  return;
             }
 
             unit.moving = false;
+            
+            unit.setPosition(originalTargetX, originalTargetY);
+            
+            unit.state = arrivalState;
+            this.logDebug(`${side} ${unitType} finished move, now ${arrivalState}.`);
 
-            // --- Arrival Collision Avoidance ---
-            let finalX = originalTargetX;
-            let finalY = originalTargetY;
-            if (this.isPositionOccupied(originalTargetX, originalTargetY, unit)) {
-                this.logDebug(`${side} ${unitType} destination (${Math.round(originalTargetX)}, ${Math.round(originalTargetY)}) occupied. Finding nearby spot.`);
-                const nearbyPos = this.findNearbyEmptyPosition(originalTargetX, originalTargetY, 50, unit);
-                finalX = nearbyPos.x;
-                finalY = nearbyPos.y;
-                // Update unit position immediately to the adjusted spot
-                unit.setPosition(finalX, finalY);
-                this.logDebug(`${side} ${unitType} moved to adjusted position (${Math.round(finalX)}, ${Math.round(finalY)}).`);
-            } else {
-                // Ensure unit is exactly at the target if no collision
-                unit.setPosition(finalX, finalY);
-            }
-            // --- End Arrival Collision Avoidance ---
-
-
-            // --- Handle Arrival State ---
-            if (arrivalState === 'attacking' && unit.target && unit.target.active) {
-                // Check range before starting attack (using the potentially adjusted final position)
-                const finalDistance = Phaser.Math.Distance.Between(unit.x, unit.y, unit.target.x, unit.target.y);
-                if (finalDistance <= SPEARMAN_ATTACK_RANGE) {
-                    this.logDebug(`${side} ${unitType} finished move, starting attack.`);
-                    this.startAttacking(unit, unit.target); // Updates state and bubble inside
-                } else {
-                    this.logDebug(`${side} ${unitType} finished move, but target out of range (${finalDistance.toFixed(0)} > ${SPEARMAN_ATTACK_RANGE}). Going idle.`);
-                    unit.state = 'idle'; // Target moved away, go idle
-                    unit.anims.stop();
-                    unit.setTexture(unitType === 'worker' ? 'worker_sheet' : 'spearman_walk_sheet');
-                    unit.setFrame(0);
-                    unit.setFlipX(unitType === 'spearman' ? !unit.getData('isPlayer') : false);
-                }
-            } else {
-                // Default arrival state (usually 'idle')
-                unit.state = arrivalState;
+            // If the arrival state is just 'idle', we can safely stop the animation now.
+            // For 'init' states, the animation will be handled by the next logic step.
+            if (arrivalState === 'idle') {
                 unit.anims.stop();
-                unit.setTexture(unitType === 'worker' ? 'worker_sheet' : 'spearman_walk_sheet');
-                unit.setFrame(0);
+                unit.setTexture(unitType === 'worker' ? 'worker_sheet' : 'spearman_walk_sheet').setFrame(0);
                 unit.setFlipX(unitType === 'spearman' ? !unit.getData('isPlayer') : false);
-                this.logDebug(`${side} ${unitType} finished move, now ${arrivalState}.`);
-            }
-            // Clear move target only if not immediately attacking
-            if (unit.state !== 'attacking') {
-                 unit.target = null;
+                unit.target = null; // Clear target on idle arrival
             }
 
-            // Update bubble on arrival
             if (unitType === 'spearman') this.updateSpearmanThoughtBubble(unit);
 
-            // Stop walk sound if needed
+            // Stop walk sound if no other units are moving
             if (this.workerWalkSound && this.workerWalkSound.isPlaying) {
-                let pWorkerMoving = this.worker && this.worker.active && this.worker.moving;
-                let aWorkerMoving = this.aiWorker && this.aiWorker.active && this.aiWorker.moving;
-                let otherSpearmanMoving = this.playerSpearmen.some(s => s.active && s.moving) || this.aiSpearmen.some(s => s.active && s.moving);
-                if (!pWorkerMoving && !aWorkerMoving && !otherSpearmanMoving) this.workerWalkSound.stop();
+                let anyOtherUnitMoving = [this.worker, this.aiWorker, ...this.playerSpearmen, ...this.aiSpearmen].some(u => u && u.active && u.moving);
+                if (!anyOtherUnitMoving) this.workerWalkSound.stop();
             }
         },
-        onStop: () => { // Called when tween is killed (e.g., new command issued)
+        onStop: () => {
             if (!unit.active) return;
-            const wasMoving = unit.moving;
-            unit.moving = false; // Ensure flag is cleared
-            // Don't reset state if it was changed by the interrupting action (e.g. startAttacking)
+            unit.moving = false;
             if (unit.state === movingState) {
-                unit.state = 'idle'; // Default to idle if interrupted without a new state assigned
+                unit.state = 'idle';
                 unit.anims.stop();
-                unit.setTexture(unitType === 'worker' ? 'worker_sheet' : 'spearman_walk_sheet');
-                unit.setFrame(0);
-                unit.setFlipX(unitType === 'spearman' ? !unit.getData('isPlayer') : false);
+                unit.setTexture(unitType === 'worker' ? 'worker_sheet' : 'spearman_walk_sheet').setFrame(0);
                 this.logDebug(`${side} ${unitType} move (${movingState}) interrupted, going idle.`);
-            }
-            // Update goal text on move stop
-             if (unitType === 'spearman') this.updateSpearmanThoughtBubble(unit);
-
-            // Stop walk sound if needed
-            if (this.workerWalkSound && this.workerWalkSound.isPlaying && wasMoving) {
-                let pWorkerMoving = this.worker && this.worker.active && this.worker.moving;
-                let aWorkerMoving = this.aiWorker && this.aiWorker.active && this.aiWorker.moving;
-                let otherSpearmanMoving = this.playerSpearmen.some(s => s.active && s.moving) || this.aiSpearmen.some(s => s.active && s.moving);
-                if (!pWorkerMoving && !aWorkerMoving && !otherSpearmanMoving) this.workerWalkSound.stop();
             }
         }
     });
